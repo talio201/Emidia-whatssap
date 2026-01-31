@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WhatsApp Web Assistant</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container-principal">
+    <!-- Header -->
+    <header class="header-principal">
+      <h1>📱 WhatsApp Assistant</h1>
+      <div id="statusConexao" class="status-conexao">
+        <span id="textoConexao">⏳ Verificando...</span>
+      </div>
+    </header>
+
+    <!-- Tabs de Navegação -->
+    <div class="tabs-navegacao">
+      <button class="tab-btn ativo" data-tab="painel">📊 Painel</button>
+      <button class="tab-btn" data-tab="contatos">👥 Contatos</button>
+      <button class="tab-btn" data-tab="conversas">💬 Conversas</button>
+      <button class="tab-btn" data-tab="enviar">✉️ Enviar</button>
+      <button class="tab-btn" data-tab="automacao">🕒 Automação</button>
+      <button class="tab-btn" data-tab="grupos">👪 Grupos</button>
+      <button class="tab-btn" data-tab="respostas">📨 Respostas</button>
+      <button class="tab-btn" data-tab="campanhas">📣 Campanhas</button>
+      <button class="tab-btn" data-tab="etiquetas">🏷️ Etiquetas</button>
+      <button class="tab-btn" data-tab="funil">🧩 Funil</button>
+      <button class="tab-btn" data-tab="relatorios">📈 Relatórios</button>
+      <button class="tab-btn" data-tab="historico">📋 Histórico</button>
+    </div>
+
+    <!-- Conteúdo das Abas -->
+    <div class="conteudo-tabs">
+      <!-- TAB 1: PAINEL GERENCIAL -->
+      <div id="painel" class="tab-content ativo">
+        <div class="painel-container">
+          <!-- Status -->
+          <div class="card-status">
+            <h2>Status</h2>
+            <div class="status-info">
+              <p><strong>Contatos Carregados:</strong> <span id="totalContatos">0</span></p>
+              <p><strong>Destinatários Selecionados:</strong> <span id="totalSelecionados">0</span></p>
+              <p><strong>Últimos Envios:</strong> <span id="totalEnvios">0</span></p>
+            </div>
+          </div>
+
+          <!-- Controles Principais -->
+          <div class="card-controles">
+            <h2>Controles</h2>
+            <div class="controles-grid">
+              <!-- Atualizar Contatos -->
+              <div class="controle-item">
+                <label>Atualizar Contatos</label>
+                <button id="btnAtualizarContatos" class="btn btn-primary">
+                  🔄 Carregar Agora
+                </button>
+                <div id="statusCarregar" class="status-pequeno"></div>
+              </div>
+
+              <!-- Modo WhatsApp -->
+              <div class="controle-item">
+                <label>Modo Seleção WhatsApp</label>
+                <div class="toggle-container">
+                  <input type="checkbox" id="toggleModoWhatsApp" class="toggle-input">
+                  <label for="toggleModoWhatsApp" class="toggle-switch"></label>
+                  <span id="textoModoWhatsApp" class="toggle-texto">Desativado</span>
+                </div>
+              </div>
+
+              <!-- Limpar Seleção -->
+              <div class="controle-item">
+                <label>Gerenciamento</label>
+                <button id="btnLimparSelecao" class="btn btn-warning">
+                  🗑️ Limpar Seleção
+                </button>
+              </div>
+
+              <!-- Limpar Histórico -->
+              <div class="controle-item">
+                <label>Dados</label>
+                <button id="btnLimparHistorico" class="btn btn-danger">
+                  🧹 Limpar Histórico
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Dica -->
+          <div class="card-dica">
+            <p>💡 <strong>Dica:</strong> Ative o "Modo Seleção WhatsApp" para clicar diretamente nos contatos</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 2: CONTATOS -->
+      <div id="contatos" class="tab-content">
+        <div class="contatos-container">
+          <div class="busca-contatos">
+            <input 
+              type="text" 
+              id="inputBuscaContatos" 
+              placeholder="🔍 Buscar contato..."
+              class="input-busca"
+            >
+          </div>
+          
+          <div id="listaContatos" class="lista-contatos">
+            <p class="vazio">Nenhum contato carregado. Atualize na aba Painel.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 3: ENVIAR -->
+      <div id="enviar" class="tab-content">
+        <div class="envio-container">
+          <!-- Destinatários Selecionados -->
+          <div class="secao-destinatarios">
+            <h3>Destinatários Selecionados</h3>
+            <div id="chipContatos" class="chip-contatos">
+              <p class="vazio-chips">Nenhum contato selecionado</p>
+            </div>
+          </div>
+
+          <!-- Seletor de Contatos -->
+          <div class="secao-selecao">
+            <h3>Selecionar Contatos</h3>
+            <div class="input-contato-wrapper">
+              <input 
+                type="text" 
+                id="contatoInput" 
+                placeholder="Digite ou selecione da lista..."
+                class="input-contato"
+              >
+            </div>
+            <div id="listaContatosRapida" class="lista-contatos-rapida">
+              <!-- Preenchida dinamicamente -->
+            </div>
+          </div>
+
+          <!-- Mensagem -->
+          <div class="secao-mensagem">
+            <h3>Mensagem</h3>
+            <textarea 
+              id="mensagem" 
+              placeholder="Digite sua mensagem..."
+              rows="5"
+              class="textarea-mensagem"
+            ></textarea>
+          </div>
+
+          <!-- Intervalo -->
+          <div class="secao-intervalo">
+            <h3>Intervalo entre envios</h3>
+            <div class="intervalo-wrapper">
+              <input type="number" id="intervaloEnvio" class="input-intervalo" min="0" value="2">
+              <span>segundos</span>
+            </div>
+          </div>
+
+          <!-- Arquivo (Opcional) -->
+          <div class="secao-arquivo">
+            <h3>Enviar Arquivo (Opcional)</h3>
+            <div class="input-file-wrapper">
+              <input type="file" id="arquivo" class="input-file">
+              <label for="arquivo" class="label-file">
+                📎 Escolher Arquivo
+              </label>
+              <span id="nomeArquivo" class="arquivo-selecionado"></span>
+            </div>
+          </div>
+
+          <!-- Botões de Envio -->
+          <div class="botoes-envio">
+            <button id="btnEnviarMensagem" class="btn btn-sucesso">
+              🚀 Enviar
+            </button>
+          </div>
+
+          <!-- Status de Envio -->
+          <div id="statusEnvio" class="status-envio"></div>
+        </div>
+      </div>
+
+      <!-- TAB 3.5: CONVERSAS -->
+      <div id="conversas" class="tab-content">
+        <div class="conversas-container">
+          <div class="chats-panel">
+            <div class="chats-header">
+              <input 
+                type="text" 
+                id="inputBuscaChats" 
+                placeholder="🔍 Buscar conversa ou grupo..."
+                class="input-busca"
+              >
+              <button id="btnAtualizarChats" class="btn btn-primary btn-sm">🔄 Atualizar</button>
+            </div>
+            <div id="listaChats" class="lista-chats">
+              <p class="vazio">Nenhuma conversa carregada.</p>
+            </div>
+          </div>
+
+          <div class="chat-panel">
+            <div class="chat-header">
+              <div class="chat-titulo" id="chatTitulo">Selecione uma conversa</div>
+              <div class="chat-subtitulo" id="chatSubtitulo"></div>
+            </div>
+            <div id="listaMensagens" class="lista-mensagens">
+              <p class="vazio">Nenhuma conversa selecionada.</p>
+            </div>
+            <div class="chat-composer">
+              <textarea id="mensagemConversa" class="textarea-mensagem" rows="2" placeholder="Digite uma mensagem..."></textarea>
+              <div class="composer-actions">
+                <input type="file" id="arquivoConversa" class="input-file">
+                <label for="arquivoConversa" class="label-file">📎</label>
+                <button id="btnEnviarConversa" class="btn btn-sucesso">Enviar</button>
+              </div>
+              <div id="statusConversa" class="status-envio"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 4: HISTÓRICO -->
+      <div id="historico" class="tab-content">
+        <div class="historico-container">
+          <div id="listaHistorico" class="lista-historico">
+            <p class="vazio">Nenhum envio realizado</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 5: AUTOMAÇÃO -->
+      <div id="automacao" class="tab-content">
+        <div class="envio-container">
+          <div class="secao-mensagem">
+            <h3>Lista de números</h3>
+            <textarea id="listaNumeros" class="textarea-mensagem" rows="4" placeholder="Ex: 51999999999, 51988888888"></textarea>
+            <div class="input-file-wrapper" style="margin-top:10px;">
+              <input type="file" id="arquivoCSV" class="input-file" accept=".csv,.txt">
+              <label for="arquivoCSV" class="label-file">📄 Importar CSV/TXT</label>
+              <span id="nomeArquivoCSV" class="arquivo-selecionado"></span>
+            </div>
+          </div>
+
+          <div class="secao-intervalo">
+            <h3>Data e horário do envio</h3>
+            <input type="datetime-local" id="dataHoraEnvio" class="input-contato">
+          </div>
+
+          <div class="secao-mensagem">
+            <h3>Mensagem</h3>
+            <textarea id="mensagemAgendada" class="textarea-mensagem" rows="4" placeholder="Digite a mensagem agendada..."></textarea>
+            <div class="input-file-wrapper" style="margin-top:10px;">
+              <select id="templateSelect" class="input-contato"></select>
+              <button id="btnSalvarTemplate" class="btn btn-info btn-sm">💾 Salvar Template</button>
+            </div>
+            <small class="arquivo-selecionado">Variáveis: {nome}, {numero}</small>
+          </div>
+
+          <div class="secao-arquivo">
+            <h3>Arquivo (opcional)</h3>
+            <div class="input-file-wrapper">
+              <input type="file" id="arquivoAgendado" class="input-file">
+              <label for="arquivoAgendado" class="label-file">📎 Escolher Arquivo</label>
+              <span id="nomeArquivoAgendado" class="arquivo-selecionado"></span>
+            </div>
+          </div>
+
+          <div class="botoes-envio">
+            <button id="btnAgendar" class="btn btn-primary">⏰ Agendar Envio</button>
+          </div>
+          <div id="statusAgendamento" class="status-envio"></div>
+
+          <div class="card-status">
+            <div class="botoes-envio">
+              <button id="btnAtualizarAgendamentos" class="btn btn-primary">🔄 Ver Agendamentos</button>
+            </div>
+            <div id="listaAgendamentos" class="lista-historico">
+              <p class="vazio">Nenhum agendamento.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 6: GRUPOS -->
+      <div id="grupos" class="tab-content">
+        <div class="envio-container">
+          <div class="secao-mensagem">
+            <h3>Criar Grupo</h3>
+            <input type="text" id="nomeGrupo" class="input-contato" placeholder="Nome do grupo">
+            <textarea id="numerosGrupo" class="textarea-mensagem" rows="3" placeholder="Números separados por vírgula"></textarea>
+            <div class="botoes-envio">
+              <button id="btnCriarGrupo" class="btn btn-primary">➕ Criar Grupo</button>
+            </div>
+          </div>
+
+          <div class="secao-mensagem">
+            <h3>Gerenciar Grupo</h3>
+            <select id="selectGrupo" class="input-contato"></select>
+            <textarea id="numerosGrupoEditar" class="textarea-mensagem" rows="3" placeholder="Números separados por vírgula"></textarea>
+            <div class="botoes-envio">
+              <button id="btnAdicionarGrupo" class="btn btn-sucesso">✅ Adicionar</button>
+              <button id="btnRemoverGrupo" class="btn btn-danger">➖ Remover</button>
+            </div>
+          </div>
+          <div class="botoes-envio">
+            <button id="btnAtualizarGrupos" class="btn btn-info">🔄 Atualizar Lista</button>
+          </div>
+          <div id="statusGrupos" class="status-envio"></div>
+        </div>
+      </div>
+
+      <!-- TAB 7: RESPOSTAS -->
+      <div id="respostas" class="tab-content">
+        <div class="historico-container">
+          <div class="botoes-envio">
+            <button id="btnAtualizarRespostas" class="btn btn-primary">🔄 Atualizar Respostas</button>
+          </div>
+          <div id="listaRespostas" class="lista-historico">
+            <p class="vazio">Nenhuma resposta registrada.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 8: CAMPANHAS -->
+      <div id="campanhas" class="tab-content">
+        <div class="envio-container">
+          <div class="secao-mensagem">
+            <h3>Criar Campanha</h3>
+            <input type="text" id="campanhaNome" class="input-contato" placeholder="Nome da campanha">
+            <textarea id="campanhaNumeros" class="textarea-mensagem" rows="3" placeholder="Números separados por vírgula"></textarea>
+            <textarea id="campanhaMensagem" class="textarea-mensagem" rows="3" placeholder="Mensagem da campanha"></textarea>
+            <div class="botoes-envio">
+              <button id="btnCriarCampanha" class="btn btn-primary">📣 Criar</button>
+            </div>
+            <div id="statusCampanhas" class="status-envio"></div>
+          </div>
+          <div class="card-status">
+            <div class="botoes-envio">
+              <button id="btnAtualizarCampanhas" class="btn btn-primary">🔄 Atualizar</button>
+            </div>
+            <div id="listaCampanhas" class="lista-historico">
+              <p class="vazio">Nenhuma campanha.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 9: ETIQUETAS -->
+      <div id="etiquetas" class="tab-content">
+        <div class="envio-container">
+          <div class="secao-mensagem">
+            <h3>Criar Etiqueta</h3>
+            <input type="text" id="tagNome" class="input-contato" placeholder="Nome da etiqueta">
+            <div class="botoes-envio">
+              <button id="btnCriarTag" class="btn btn-primary">🏷️ Criar</button>
+            </div>
+          </div>
+
+          <div class="secao-mensagem">
+            <h3>Aplicar Etiquetas</h3>
+            <textarea id="tagNumeros" class="textarea-mensagem" rows="3" placeholder="Números separados por vírgula"></textarea>
+            <input type="text" id="tagLista" class="input-contato" placeholder="Etiquetas (separadas por vírgula)">
+            <div class="botoes-envio">
+              <button id="btnAplicarTags" class="btn btn-sucesso">✅ Aplicar</button>
+            </div>
+          </div>
+          <div id="statusTags" class="status-envio"></div>
+        </div>
+      </div>
+
+      <!-- TAB 10: FUNIL -->
+      <div id="funil" class="tab-content">
+        <div class="envio-container">
+          <div class="secao-mensagem">
+            <h3>Atualizar Funil</h3>
+            <input type="text" id="funilNumero" class="input-contato" placeholder="Número">
+            <input type="text" id="funilEtapa" class="input-contato" placeholder="Etapa (ex: Interessado)">
+            <div class="botoes-envio">
+              <button id="btnAtualizarFunil" class="btn btn-primary">🧩 Atualizar</button>
+            </div>
+          </div>
+          <div class="card-status">
+            <div class="botoes-envio">
+              <button id="btnVerFunil" class="btn btn-primary">🔄 Ver Funil</button>
+            </div>
+            <div id="listaFunil" class="lista-historico">
+              <p class="vazio">Sem dados.</p>
+            </div>
+          </div>
+          <div id="statusFunil" class="status-envio"></div>
+        </div>
+      </div>
+
+      <!-- TAB 11: RELATÓRIOS -->
+      <div id="relatorios" class="tab-content">
+        <div class="historico-container">
+          <div class="botoes-envio">
+            <button id="btnAtualizarRelatorios" class="btn btn-primary">🔄 Atualizar Relatórios</button>
+          </div>
+          <div id="listaRelatorios" class="lista-historico">
+            <p class="vazio">Nenhum relatório.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,88 @@
+{
+  "schedules": [],
+  "uploads": [],
+  "replies": [
+    {
+      "id": "false_13135550014@c.us_3EB04F7AA50BC19609E6",
+      "from": "13135550014@c.us",
+      "body": "",
+      "timestamp": 1769811490,
+      "fromMe": false
+    },
+    {
+      "id": "false_13135550014@c.us_3EB0BFA00F4BB533B893",
+      "from": "13135550014@c.us",
+      "body": "",
+      "timestamp": 1769811482,
+      "fromMe": false
+    },
+    {
+      "id": "false_13135550014@c.us_3EB088531E762B61C7FD",
+      "from": "13135550014@c.us",
+      "body": "",
+      "timestamp": 1769811482,
+      "fromMe": false
+    },
+    {
+      "id": "false_13135550002@c.us_3EB0E1EBF08D3FB70D10",
+      "from": "13135550002@c.us",
+      "body": "",
+      "timestamp": 1769811480,
+      "fromMe": false
+    },
+    {
+      "id": "false_status@broadcast_ACCB3D8D44D845DAA7E99E92E62D15B0_276179349164118@lid",
+      "from": "status@broadcast",
+      "body": "",
+      "timestamp": 1769811284,
+      "fromMe": false
+    },
+    {
+      "id": "false_555192094934@c.us_3AC131F0C52CE24B5047",
+      "from": "555192094934@c.us",
+      "body": "Ok",
+      "timestamp": 1769811281,
+      "fromMe": false
+    }
+  ],
+  "campaigns": [],
+  "tags": [],
+  "contactTags": {},
+  "funnel": {
+    "555192094934": {
+      "stage": "Respondeu",
+      "updatedAt": 1769811281855
+    },
+    "13135550002": {
+      "stage": "Respondeu",
+      "updatedAt": 1769811480613
+    },
+    "13135550014": {
+      "stage": "Respondeu",
+      "updatedAt": 1769811490988
+    }
+  },
+  "sentLog": [
+    {
+      "id": "true_13135550014@c.us_3EB065ABB8FF51C5DBC41E",
+      "to": "13135550014@c.us",
+      "message": "teste",
+      "campaignId": null,
+      "timestamp": 1769811482433
+    },
+    {
+      "id": "true_13135550002@c.us_3EB0C90AAE6FF43584F6BA",
+      "to": "13135550002@c.us",
+      "message": "teste",
+      "campaignId": null,
+      "timestamp": 1769811480267
+    },
+    {
+      "id": "true_555195056137@c.us_3EB0C586A61BE487B1AE81_out",
+      "to": "555195056137@c.us",
+      "message": "teste",
+      "campaignId": null,
+      "timestamp": 1769811478229
+    }
+  ]
+}
