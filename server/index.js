@@ -7,9 +7,33 @@ import { fileURLToPath } from "url";
 import pkg from "whatsapp-web.js";
 const { Client, LocalAuth, MessageMedia } = pkg;
 
+
+const API_TOKEN = process.env.API_TOKEN || "changeme";
+
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "25mb" }));
+
+// Middleware de autenticação simples por token
+function authMiddleware(req, res, next) {
+  const token = req.headers["x-api-token"] || req.query.api_token;
+  if (token !== API_TOKEN) {
+    return res.status(401).json({ error: "unauthorized" });
+  }
+  next();
+}
+
+// Middleware de validação básica de entrada
+function validateStringFields(fields) {
+  return (req, res, next) => {
+    for (const f of fields) {
+      if (typeof req.body[f] !== "string" || req.body[f].length === 0) {
+        return res.status(400).json({ error: `invalid_field_${f}` });
+      }
+    }
+    next();
+  };
+}
 
 const PORT = process.env.PORT || 3001;
 
@@ -90,6 +114,12 @@ client.on("disconnected", () => {
 
 client.on("message", async (msg) => {
   try {
+    // Simula leitura da mensagem recebida
+    if (msg.from && !msg.fromMe) {
+      try {
+        await msg.getChat().then(chat => chat.sendSeen());
+      } catch {}
+    }
     const store = loadStore();
     store.replies.unshift({
       id: msg.id?._serialized || "",
@@ -140,12 +170,8 @@ app.get("/qr", (_req, res) => {
   `);
 });
 
-app.post("/upload", async (req, res) => {
+app.post("/upload", authMiddleware, validateStringFields(["filename", "base64", "mime"]), async (req, res) => {
   const { filename, base64, mime } = req.body || {};
-  if (!filename || !base64 || !mime) {
-    res.status(400).json({ error: "missing_upload_data" });
-    return;
-  }
   try {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -162,7 +188,7 @@ app.post("/upload", async (req, res) => {
   }
 });
 
-app.post("/schedule", async (req, res) => {
+app.post("/schedule", authMiddleware, async (req, res) => {
   const { numbers, message, sendAt, uploadId, campaignId } = req.body || {};
   if (!Array.isArray(numbers) || numbers.length === 0 || !sendAt) {
     res.status(400).json({ error: "missing_schedule_data" });
@@ -249,7 +275,7 @@ app.get("/messages", async (req, res) => {
   }
 });
 
-app.post("/send", async (req, res) => {
+app.post("/send", authMiddleware, validateStringFields(["message"]), async (req, res) => {
   const { number, message, chatId, campaignId } = req.body || {};
   if ((!number && !chatId) || !message) {
     res.status(400).json({ error: "missing_target_or_message" });
@@ -275,7 +301,7 @@ app.post("/send", async (req, res) => {
   }
 });
 
-app.post("/send-media", async (req, res) => {
+app.post("/send-media", authMiddleware, validateStringFields(["mediaBase64", "mimetype"]), async (req, res) => {
   const { number, chatId, message, mediaBase64, mimetype, filename, campaignId } = req.body || {};
   if ((!number && !chatId) || !mediaBase64 || !mimetype) {
     res.status(400).json({ error: "missing_target_or_media" });
@@ -439,7 +465,44 @@ app.post("/groups/remove", async (req, res) => {
   }
 });
 
-// Scheduler
+
+// Função utilitária para jitter (delay aleatório)
+function randomDelay(min = 15000, max = 45000) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+// Função utilitária para spintax simples
+function spintax(msg, vars = {}) {
+  // Exemplo: "{Olá|Oi|E aí} {nome}, seu pedido {saiu|tem novidades}!"
+  let out = msg.replace(/\{([^}]+)\}/g, (_, opts) => {
+    const arr = opts.split('|');
+    return arr[Math.floor(Math.random() * arr.length)];
+  });
+  // Substitui variáveis do tipo {{nome}}
+  Object.entries(vars).forEach(([k, v]) => {
+    out = out.replace(new RegExp(`{{${k}}}`, 'g'), v);
+  });
+  return out;
+}
+
+// Função para verificar se está em horário comercial (8h-20h)
+function horarioHumano() {
+  const h = new Date().getHours();
+  return h >= 8 && h < 20;
+}
+
+// Função para controle de ramp-up (limite diário por idade do número)
+function podeEnviarHoje(store, maxPorDia = 50) {
+  // Exemplo: limita a 50 envios/dia, pode customizar por idade do número
+  const hoje = new Date().toISOString().slice(0, 10);
+  const enviadosHoje = (store.sentLog || []).filter(s => {
+    const data = new Date(s.timestamp).toISOString().slice(0, 10);
+    return data === hoje;
+  }).length;
+  return enviadosHoje < maxPorDia;
+}
+
+// Scheduler com jitter, composing, spintax, ramp-up e horário humano
 setInterval(async () => {
   const store = loadStore();
   const now = Date.now();
@@ -447,6 +510,11 @@ setInterval(async () => {
   for (const sched of pending) {
     const when = new Date(sched.sendAt).getTime();
     if (Number.isNaN(when) || when > now) continue;
+
+    // Checa horário humano e ramp-up
+    if (!horarioHumano() || !podeEnviarHoje(store, 50)) {
+      continue;
+    }
 
     try {
       let media = null;
@@ -459,11 +527,25 @@ setInterval(async () => {
 
       for (const n of sched.numbers) {
         const jid = `${String(n).replace(/\D/g, "")}@c.us`;
+
+        // Simula presença (composing)
+        await client.sendPresenceAvailable();
+        await client.sendPresenceUpdate('composing', jid);
+        await new Promise(r => setTimeout(r, Math.floor(Math.random() * 2000) + 3000)); // 3-5s
+
+        // Varia mensagem (spintax)
+        let msgFinal = sched.message || "";
+        // Exemplo: pode passar variáveis como nome, etc.
+        msgFinal = spintax(msgFinal, { nome: n });
+
         if (media) {
-          await client.sendMessage(jid, media, { caption: sched.message || "" });
+          await client.sendMessage(jid, media, { caption: msgFinal });
         } else {
-          await client.sendMessage(jid, sched.message || "");
+          await client.sendMessage(jid, msgFinal);
         }
+
+        // Jitter entre envios
+        await new Promise(r => setTimeout(r, randomDelay()));
       }
 
       sched.status = "sent";
