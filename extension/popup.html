@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <title>WhatsApp Web Assistant</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div id="dashboard">
+    <header>
+      <h1>Dashboard WhatsApp Web</h1>
+      <span id="status" class="status">Conectando...</span>
+    </header>
+    <section class="area-contatos">
+      <input type="text" id="busca-contato" placeholder="Buscar contato..." />
+      <div id="contatos-lista" class="contatos-lista"></div>
+    </section>
+    <section class="area-envio">
+      <textarea id="mensagem-envio" placeholder="Digite sua mensagem..."></textarea>
+      <button id="enviar-multiplos">Enviar para selecionados</button>
+      <span id="envio-status" class="envio-status"></span>
+    </section>
+    <section class="area-historico">
+      <h2>Histórico de envios</h2>
+      <div id="historico-lista"></div>
+    </section>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
