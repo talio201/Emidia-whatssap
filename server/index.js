@@ -1,5 +1,35 @@
 import express from "express";
-// ...existing code...
+import fs from "fs";
+import path from "path";
+import QRCode from "qrcode";
+import puppeteer from "puppeteer";
+import { Client, LocalAuth, MessageMedia } from "whatsapp-web.js";
+
+const app = express();
+const PORT = process.env.PORT || 3001;
+const dataFile = path.join(__dirname, "data", "store.json");
+const uploadsDir = path.join(__dirname, "data", "uploads");
+
+// Funções utilitárias e variáveis globais
+const loadStore = () => {
+  if (!fs.existsSync(dataFile)) return { replies: [], schedules: [], sentLog: [], uploads: [], campaigns: [], tags: [], contactTags: {}, funnel: {} };
+  try {
+    return JSON.parse(fs.readFileSync(dataFile, "utf8"));
+  } catch {
+    return { replies: [], schedules: [], sentLog: [], uploads: [], campaigns: [], tags: [], contactTags: {}, funnel: {} };
+  }
+};
+
+const saveStore = (store) => {
+  fs.writeFileSync(dataFile, JSON.stringify(store, null, 2));
+};
+
+let latestQr = null;
+let clientReady = false;
+let lastAuthError = null;
+let client = null;
+
+// ...restante do código...
           // Simula presença (composing)
           await client.sendPresenceAvailable();
           await client.sendPresenceUpdate('composing', jid);
