@@ -73,9 +73,14 @@ function injectSidebar() {
       // Controls (minimize / close)
       const controls = document.createElement('div');
       controls.className = 'emidia-controls';
+      // SVG icons for minimize and close
       controls.innerHTML = `
-        <button id="emidia-minimize" title="Minimizar">—</button>
-        <button id="emidia-close" title="Fechar">✕</button>
+        <button id="emidia-minimize" title="Minimizar" aria-label="Minimizar">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="11" width="18" height="2" rx="1" fill="currentColor"/></svg>
+        </button>
+        <button id="emidia-close" title="Fechar" aria-label="Fechar">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 6L18 18M6 18L18 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
       `;
       sidebar.appendChild(controls);
 
@@ -112,6 +117,33 @@ function injectSidebar() {
         sidebar.classList.add('closed');
         localStorage.setItem(stateKey, 'closed');
         toggle.classList.add('collapsed');
+      });
+
+      // Keyboard shortcut: Ctrl/Cmd + Shift + E toggles sidebar
+      window.addEventListener('keydown', (ev) => {
+        const isMac = navigator.platform.toUpperCase().includes('MAC');
+        const mod = isMac ? ev.metaKey : ev.ctrlKey;
+        if (mod && ev.shiftKey && (ev.key === 'E' || ev.key === 'e')) {
+          ev.preventDefault();
+          // reopen if closed
+          if (sidebar.classList.contains('closed')) {
+            sidebar.classList.remove('closed');
+            sidebar.classList.add('open');
+            localStorage.setItem(stateKey, 'open');
+            toggle.classList.remove('collapsed');
+          } else {
+            // toggle open/close
+            const currentlyOpen = sidebar.classList.toggle('open');
+            if (!currentlyOpen) {
+              sidebar.classList.add('closed');
+              localStorage.setItem(stateKey, 'closed');
+              toggle.classList.add('collapsed');
+            } else {
+              localStorage.setItem(stateKey, 'open');
+              toggle.classList.remove('collapsed');
+            }
+          }
+        }
       });
     } catch (err) {
       console.error('Erro ao injetar popup HTML/CSS:', err);
