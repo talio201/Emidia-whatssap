@@ -21,20 +21,20 @@ function injectSidebar() {
   const style = document.createElement('style');
   style.id = 'emidia-sidebar-style';
   style.textContent = `
-    #emidia-sidebar { position: fixed; right: 0; top: 0; height: 100vh; width: 360px; max-width: 90vw; z-index: 2147483647; box-shadow: -6px 0 24px rgba(0,0,0,0.24); transition: transform .22s ease; transform: translateX(100%); }
+    #emidia-sidebar { position: fixed; right: 0; top: 0; height: 100vh; width: 420px; max-width: 100vw; z-index: 2147483647; box-shadow: -6px 0 24px rgba(0,0,0,0.24); transition: transform .22s ease; transform: translateX(100%); }
     #emidia-sidebar.open { transform: translateX(0); }
     #emidia-sidebar iframe { width: 100%; height: 100%; border: 0; }
-    #emidia-sidebar-toggle { position: fixed; right: 360px; top: 120px; width: 44px; height: 120px; background: linear-gradient(180deg,#25d366,#128c7e); color: #fff; display:flex;align-items:center;justify-content:center;border-radius:8px 0 0 8px; z-index:2147483647; cursor:pointer; box-shadow: -4px 2px 12px rgba(0,0,0,0.18); }
+    #emidia-sidebar-toggle { position: fixed; right: 420px; top: 140px; width: 48px; height: 140px; background: linear-gradient(180deg,#25d366,#128c7e); color: #fff; display:flex;align-items:center;justify-content:center;border-radius:8px 0 0 8px; z-index:2147483647; cursor:pointer; box-shadow: -4px 2px 12px rgba(0,0,0,0.18); }
     #emidia-sidebar-toggle.collapsed { right: 0; border-radius: 0 0 0 0; transform: translateX(0); }
-    #emidia-sidebar-toggle span { writing-mode: vertical-rl; transform: rotate(180deg); font-weight:700; }
+    #emidia-sidebar-toggle span { writing-mode: vertical-rl; transform: rotate(180deg); font-weight:700; font-size:13px; }
     @media(max-width:600px){ #emidia-sidebar{width: 100vw;} #emidia-sidebar-toggle{right: calc(100vw - 44px);} }
   `;
   document.head.appendChild(style);
 
   const toggle = document.createElement('div');
   toggle.id = 'emidia-sidebar-toggle';
-  toggle.title = 'Abrir WhatsApp Assistant';
-  toggle.innerHTML = `<span>Assistant</span>`;
+  toggle.title = 'Abrir WhatsApp Assistente';
+  toggle.innerHTML = `<span>Assistente</span>`;
   document.body.appendChild(toggle);
 
   const sidebar = document.createElement('div');
@@ -48,7 +48,7 @@ function injectSidebar() {
   function toggleSidebar() {
     const opened = sidebar.classList.toggle('open');
     toggle.classList.toggle('collapsed', !opened);
-    toggle.title = opened ? 'Fechar Assistant' : 'Abrir Assistant';
+    toggle.title = opened ? 'Fechar Assistente' : 'Abrir Assistente';
   }
 
   toggle.addEventListener('click', (e) => {
@@ -67,8 +67,15 @@ function injectSidebar() {
   });
 }
 
-// inject sidebar on load
-try { injectSidebar(); } catch (e) { console.error('Erro injectSidebar', e); }
+  // inject sidebar on load (open by default)
+  try {
+    injectSidebar();
+    // open by default
+    const existing = document.getElementById('emidia-sidebar');
+    const existingToggle = document.getElementById('emidia-sidebar-toggle');
+    if (existing) existing.classList.add('open');
+    if (existingToggle) existingToggle.classList.remove('collapsed');
+  } catch (e) { console.error('Erro injectSidebar', e); }
 
 // Função auxiliar para debugar estrutura do botão de envio
 function debugBotaoEnvio() {
