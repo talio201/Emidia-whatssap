@@ -101,6 +101,13 @@ async function startServer() {
   const browserVisible = process.env.BROWSER_VISIBLE === 'true';
   const chromeExecutable = process.env.CHROME_EXECUTABLE || undefined;
   const userDataDir = process.env.USER_DATA_DIR || undefined;
+  // Allow specifying a separate auth storage directory (used by LocalAuth)
+  // If not provided, prefer an existing repo-local auth folder so we
+  // automatically reuse an already-authenticated session and avoid
+  // forcing QR scans on every restart.
+  const repoDefaultAuth = path.join(__dirname, '.wwebjs_auth', 'session-default');
+  const authDataDir = process.env.AUTH_DATA_DIR || (fs.existsSync(repoDefaultAuth) ? repoDefaultAuth : undefined);
+  if (authDataDir) console.log('[server] Using LocalAuth dataPath:', authDataDir);
 
   const puppeteerOptions = {
     headless: !browserVisible,
@@ -111,6 +118,71 @@ async function startServer() {
       "--disable-gpu"
     ]
   };
+  // Optionally hide the "Chrome is being controlled by automated test software"
+  // banner and related automation flags. When MASK_AUTOMATION=true we remove
+  // the default --enable-automation arg and add a Blink feature toggle that
+  // helps hide AutomationControlled. Not guaranteed to remove all traces but
+  // reduces the banner in many environments.
+  if (process.env.MASK_AUTOMATION === 'true') {
+    puppeteerOptions.ignoreDefaultArgs = ['--enable-automation'];
+    puppeteerOptions.args.push('--disable-blink-features=AutomationControlled');
+  }
+
+  // Optionally load a Chrome extension into the launched profile. Set
+  // LOAD_EXTENSION_DIR to an absolute path to the unpacked extension folder
+  // (the folder that contains the manifest.json). This will add the
+  // --disable-extensions-except and --load-extension flags so the extension
+  // is available in the browser instance controlled by Puppeteer.
+  const loadExt = process.env.LOAD_EXTENSION_DIR;
+  if (loadExt) {
+    puppeteerOptions.args.push(`--disable-extensions-except=${loadExt}`);
+    puppeteerOptions.args.push(`--load-extension=${loadExt}`);
+  }
+
+  // Support reconnecting to an already running Chrome instance instead of
+  // launching a new one. This allows reusing an existing profile that is
+  // already open (so no need to scan QR every run). Use one of:
+  // - BROWSER_WS_ENDPOINT (full websocket URL), or
+  // - REMOTE_DEBUGGING_PORT (numeric port where Chrome exposes the devtools)
+  // and set REUSE_EXISTING_BROWSER=true to enable automatic discovery.
+  const reuseBrowser = process.env.REUSE_EXISTING_BROWSER === 'true';
+  const browserWs = process.env.BROWSER_WS_ENDPOINT;
+  const remotePort = process.env.REMOTE_DEBUGGING_PORT || '9222';
+  if (reuseBrowser) {
+    if (browserWs) {
+      puppeteerOptions.browserWSEndpoint = browserWs;
+      // When connecting to an existing browser, do not attempt to set
+      // executablePath or userDataDir here.
+      delete puppeteerOptions.executablePath;
+      delete puppeteerOptions.userDataDir;
+      console.log('[server] Reusing existing browser via BROWSER_WS_ENDPOINT');
+    } else {
+      // Try to fetch websocket endpoint from local debugging port
+      try {
+        // eslint-disable-next-line no-sync
+        const http = await import('node:http');
+        const url = `http://127.0.0.1:${remotePort}/json/version`;
+        const body = await new Promise((resolve, reject) => {
+          http.get(url, (res) => {
+            let data = '';
+            res.on('data', (chunk) => (data += chunk));
+            res.on('end', () => resolve(data));
+          }).on('error', (err) => reject(err));
+        });
+        const parsed = JSON.parse(body || '{}');
+        if (parsed.webSocketDebuggerUrl) {
+          puppeteerOptions.browserWSEndpoint = parsed.webSocketDebuggerUrl;
+          delete puppeteerOptions.executablePath;
+          delete puppeteerOptions.userDataDir;
+          console.log('[server] Reusing existing browser via remote debugging port ' + remotePort);
+        } else {
+          console.warn('[server] Could not discover websocket endpoint on port ' + remotePort);
+        }
+      } catch (e) {
+        console.warn('[server] Error discovering existing browser:', e.message || e);
+      }
+    }
+  }
   // If running visible and no executable specified, prefer the system Chrome
   if (chromeExecutable) {
     puppeteerOptions.executablePath = chromeExecutable;
@@ -122,10 +194,15 @@ async function startServer() {
     };
     if (defaults[process.platform]) puppeteerOptions.executablePath = defaults[process.platform];
   }
-  if (userDataDir) puppeteerOptions.userDataDir = userDataDir;
+  // Do NOT set puppeteer.userDataDir when using LocalAuth storage, as
+  // whatsapp-web.js' LocalAuth manages its own profile and is incompatible
+  // with a user-supplied puppeteer userDataDir. If a raw browser profile
+  // must be used, set USER_DATA_DIR but be aware it may conflict with LocalAuth.
+  if (userDataDir && !authDataDir) puppeteerOptions.userDataDir = userDataDir;
 
+  const localAuthOptions = authDataDir ? { clientId, dataPath: authDataDir } : { clientId };
   client = new Client({
-    authStrategy: new LocalAuth({ clientId }),
+    authStrategy: new LocalAuth(localAuthOptions),
     puppeteer: puppeteerOptions
   });
 
@@ -242,8 +319,9 @@ async function startServer() {
     saveStore(store);
   }, 10000);
 
-  app.listen(PORT, () => {
-    console.log(`WhatsApp backend rodando na porta ${PORT}`);
+  const BIND_ADDRESS = process.env.BIND_ADDRESS || '127.0.0.1';
+  app.listen(PORT, BIND_ADDRESS, () => {
+    console.log(`WhatsApp backend rodando na porta ${PORT} (bind ${BIND_ADDRESS})`);
   });
 }
 
