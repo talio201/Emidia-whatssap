@@ -171,6 +171,18 @@ function injectSidebar() {
     } catch (err) {
       console.error('Erro ao injetar popup HTML/CSS:', err);
       // fallback: still append empty sidebar so toggle works
+      try {
+        const msg = document.createElement('div');
+        msg.id = 'emidia-error-message';
+        msg.style.padding = '16px';
+        msg.style.color = '#111';
+        msg.style.fontSize = '13px';
+        msg.style.lineHeight = '1.4';
+        msg.innerHTML = `<strong>Erro ao carregar Assistant</strong><p style="color:#666;margin-top:8px;">${(err && err.message) ? err.message : String(err)}</p><p style="margin-top:8px;color:#666">Abra o console (Option+Cmd+I) e envie os erros para depuração.</p>`;
+        sidebar.appendChild(msg);
+      } catch (e) {
+        // ignore
+      }
       document.body.appendChild(sidebar);
     }
   })();
