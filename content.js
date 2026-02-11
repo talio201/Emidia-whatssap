@@ -461,63 +461,132 @@ function abrirNovaConversaComNumero(numero) {
 }
 
 
-// Função para enviar mensagem - REESCRITA COMPLETA
-function enviarMensagem(numeroOuNome, mensagem) {
-  return new Promise((resolve) => {
-    try {
-      console.log(`📤 [PASSO 1] Iniciando envio para: "${numeroOuNome}"`);
-
-      const normalizeTexto = (texto) => {
-        return texto
-          .normalize('NFD')
-          .replace(/\p{Diacritic}/gu, '')
-          .replace(/\s+/g, ' ')
-          .trim()
-          .toLowerCase();
-      };
-
-      const limparVoce = (texto) => {
-        return texto.replace(/\(você\)|\(voce\)/gi, '').trim();
-      };
-
-      const obterTituloConversaAtual = () => {
-        const header = document.querySelector('header');
-        if (!header) return '';
-        const candidatos = [];
-
-        const testIds = [
-          '[data-testid="conversation-info-header-chat-title"]',
-          '[data-testid="chat-title"]'
-        ];
-        testIds.forEach((sel) => {
-          const el = header.querySelector(sel);
-          if (el && el.textContent.trim()) candidatos.push(el.textContent.trim());
-        });
-
-        const spansTitulo = header.querySelectorAll('span[dir="auto"], [title]');
-        spansTitulo.forEach((s) => {
-          const t = (s.getAttribute('title') || s.textContent || '').trim();
-          if (t) candidatos.push(t);
-        });
-
-        const h = header.querySelector('h1, h2');
-        if (h && h.textContent.trim()) candidatos.push(h.textContent.trim());
-
-        if (!candidatos.length) return '';
-        candidatos.sort((a, b) => b.length - a.length);
-        return candidatos[0];
-      };
-      
-      // PASSO 1: Encontrar e clicar no contato
-      const containerPrincipal = document.querySelector('.x1n2onr6');
-      if (!containerPrincipal) {
-        console.log("❌ Container principal não encontrado");
-        resolve({ sucesso: false, mensagem: "Container não encontrado" });
-        return;
+// Função profissional para automação de envio de mensagem no WhatsApp Web
+async function enviarMensagem(numeroOuNome, mensagem) {
+  // Exibe overlay de status profissional
+  mostrarOverlayStatus('Iniciando envio para: ' + numeroOuNome);
+  try {
+    // Utilitários de normalização
+    const normalizeTexto = (texto) => texto.normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const limparVoce = (texto) => texto.replace(/\(você\)|\(voce\)/gi, '').trim();
+    // Busca o container principal de conversas
+    const containerPrincipal = document.querySelector('.x1n2onr6');
+    if (!containerPrincipal) {
+      mostrarOverlayStatus('❌ Não foi possível localizar a lista de conversas.');
+      return { sucesso: false, mensagem: 'Container não encontrado' };
+    }
+    // Busca contato na lista
+    const rows = containerPrincipal.querySelectorAll('[role="row"]');
+    let elementoClicavel = null;
+    const alvoNormalizado = normalizeTexto(limparVoce(numeroOuNome));
+    const apenasNumeros = numeroOuNome.replace(/\D/g, '');
+    const termoNumero = apenasNumeros.length >= 10 ? apenasNumeros : null;
+    for (const row of rows) {
+      const spans = row.querySelectorAll('span[dir="auto"]');
+      for (const s of spans) {
+        const t = normalizeTexto(limparVoce(s.textContent.trim()));
+        if (t === alvoNormalizado || (termoNumero && s.textContent.replace(/\D/g, '') === termoNumero)) {
+          elementoClicavel = row;
+          break;
+        }
       }
-      
-      const rows = containerPrincipal.querySelectorAll('[role="row"]');
-      let elementoClicavel = null;
+      if (elementoClicavel) break;
+    }
+    // Se não encontrou, tenta abrir nova conversa
+    if (!elementoClicavel && termoNumero) {
+      mostrarOverlayStatus('Abrindo nova conversa para o número: ' + termoNumero);
+      window.proximaMensagem = mensagem;
+      await abrirNovaConversaComNumero(termoNumero);
+      await aguardar(2000);
+      return await enviarMensagemAposPagina(mensagem);
+    } else if (!elementoClicavel) {
+      mostrarOverlayStatus('❌ Contato não encontrado.');
+      return { sucesso: false, mensagem: 'Contato não encontrado' };
+    }
+    // Clica no contato
+    elementoClicavel.scrollIntoView({ block: 'center' });
+    elementoClicavel.click();
+    mostrarOverlayStatus('Contato localizado. Abrindo conversa...');
+    await aguardar(800);
+    // Aguarda input de mensagem
+    let tentativas = 0;
+    let input = null;
+    while (tentativas < 10 && !input) {
+      input = document.querySelector('div[contenteditable="true"][data-tab="10"]') || document.querySelector('[contenteditable="true"][role="textbox"]');
+      if (!input) {
+        await aguardar(500);
+        tentativas++;
+      }
+    }
+    if (!input) {
+      mostrarOverlayStatus('❌ Não foi possível localizar o campo de mensagem.');
+      return { sucesso: false, mensagem: 'Input não encontrado' };
+    }
+    // Insere mensagem
+    input.focus();
+    input.innerHTML = '';
+    document.execCommand('insertText', false, mensagem);
+    mostrarOverlayStatus('Mensagem inserida. Enviando...');
+    await aguardar(400);
+    // Dispara Enter
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+    await aguardar(100);
+    input.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+    // Confirma envio
+    await aguardar(1200);
+    const inputDepois = document.querySelector('div[contenteditable="true"][data-tab="10"]') || document.querySelector('[contenteditable="true"][role="textbox"]');
+    const estaVazio = !inputDepois || inputDepois.textContent.trim() === '';
+    if (estaVazio) {
+      mostrarOverlayStatus('✅ Mensagem enviada com sucesso!');
+      await aguardar(800);
+      removerOverlayStatus();
+      return { sucesso: true, mensagem: 'Mensagem enviada!' };
+    } else {
+      mostrarOverlayStatus('⚠️ Mensagem pode não ter sido enviada.');
+      await aguardar(1200);
+      removerOverlayStatus();
+      return { sucesso: false, mensagem: 'Verifique o envio manualmente.' };
+    }
+  } catch (e) {
+    mostrarOverlayStatus('❌ Erro ao enviar mensagem: ' + e.message);
+    await aguardar(1500);
+    removerOverlayStatus();
+    return { sucesso: false, mensagem: 'Erro: ' + e.message };
+  }
+}
+
+// Overlay de status profissional
+function mostrarOverlayStatus(msg) {
+  let overlay = document.getElementById('emidia-status-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'emidia-status-overlay';
+    overlay.style.position = 'fixed';
+    overlay.style.top = '0';
+    overlay.style.left = '0';
+    overlay.style.width = '100vw';
+    overlay.style.height = '100vh';
+    overlay.style.background = 'rgba(0,0,0,0.35)';
+    overlay.style.zIndex = '99999';
+    overlay.style.display = 'flex';
+    overlay.style.alignItems = 'center';
+    overlay.style.justifyContent = 'center';
+    overlay.style.pointerEvents = 'none';
+    overlay.innerHTML = '<div id="emidia-status-msg" style="background:#222;color:#fff;padding:32px 48px;border-radius:18px;font-size:1.5rem;box-shadow:0 4px 32px #0008;font-family:sans-serif;max-width:90vw;text-align:center;"></div>';
+    document.body.appendChild(overlay);
+  }
+  const msgDiv = document.getElementById('emidia-status-msg');
+  if (msgDiv) msgDiv.textContent = msg;
+}
+
+function removerOverlayStatus() {
+  const overlay = document.getElementById('emidia-status-overlay');
+  if (overlay) overlay.remove();
+}
+
+function aguardar(ms) {
+  return new Promise((res) => setTimeout(res, ms));
+}
 
       console.log(`🔍 Procurando "${numeroOuNome}" entre ${rows.length} linhas...`);
 

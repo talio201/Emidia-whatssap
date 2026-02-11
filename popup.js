@@ -174,58 +174,66 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // ===== NAVEGAÇÃO ENTRE ABAS =====
   tabBtns.forEach(btn => {
-    btn.addEventListener("click", () => {
-      const tabName = btn.dataset.tab;
-      
-      // Remover classe ativo de todos
-      tabBtns.forEach(b => b.classList.remove("ativo"));
-      tabContents.forEach(c => c.classList.remove("ativo"));
-
-      // Adicionar classe ativo ao clicado
-      btn.classList.add("ativo");
-      document.getElementById(tabName).classList.add("ativo");
-
-      if (tabName === "conversas") {
-        carregarChats();
-      }
-      if (tabName === "grupos") {
-        carregarGrupos();
-      }
-      if (tabName === "respostas") {
-        carregarRespostas();
-      }
-      if (tabName === "campanhas") {
-        carregarCampanhas();
-      }
-      if (tabName === "funil") {
-        carregarFunil();
-      }
-      if (tabName === "relatorios") {
-        carregarRelatorios();
-      }
+    btn.addEventListener("click", () => ativarAba(btn));
+    btn.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") ativarAba(btn);
     });
   });
+
+  function ativarAba(btn) {
+    const tabName = btn.dataset.tab;
+    tabBtns.forEach(b => {
+      b.classList.remove("ativo");
+      b.setAttribute("aria-selected", "false");
+    });
+    tabContents.forEach(c => c.classList.remove("ativo"));
+    btn.classList.add("ativo");
+    btn.setAttribute("aria-selected", "true");
+    document.getElementById(tabName).classList.add("ativo");
+    document.getElementById(tabName).focus?.();
+    // Carregamento dinâmico por aba
+    switch(tabName) {
+      case "conversas": carregarChats(); break;
+      case "grupos": carregarGrupos(); break;
+      case "respostas": carregarRespostas(); break;
+      case "campanhas": carregarCampanhas(); break;
+      case "funil": carregarFunil(); break;
+      case "relatorios": carregarRelatorios(); break;
+    }
+  }
 
   // ===== FUNÇÕES GERAIS =====
   function atualizarEstatisticas() {
     totalContatos.textContent = listaContatosGlobal.length;
     totalSelecionados.textContent = contatosSelecionados.length;
     totalEnvios.textContent = historico.obter().length;
+    // Feedback visual
+    totalContatos.parentElement.classList.add("highlight");
+    setTimeout(() => totalContatos.parentElement.classList.remove("highlight"), 400);
   }
 
   function adicionarContatoGlobal(nome) {
     const contato = typeof nome === "string"
       ? criarContatoPorNomeOuNumero(nome)
       : nome;
-
     if (!contato) return;
-
     if (contatosSelecionados.some(c => c.numero === contato.numero)) {
+      mostrarStatusPainel("Contato já selecionado.", "warning");
       return;
     }
     contatosSelecionados.push({ ...contato, id: Date.now() });
     atualizarChips();
     atualizarEstatisticas();
+    mostrarStatusPainel("Contato adicionado!", "sucesso");
+  }
+
+  function mostrarStatusPainel(msg, tipo = "info") {
+    statusCarregar.textContent = msg;
+    statusCarregar.className = "status-pequeno " + tipo;
+    setTimeout(() => {
+      statusCarregar.textContent = "";
+      statusCarregar.className = "status-pequeno";
+    }, 1800);
   }
 
   function removerContatoGlobal(id) {

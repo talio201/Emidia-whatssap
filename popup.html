@@ -7,38 +7,38 @@
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <div class="container-principal">
+  <div class="container-principal" role="main" aria-label="Painel WhatsApp Assistant">
     <!-- Header -->
-    <header class="header-principal">
-      <h1>📱 WhatsApp Assistant</h1>
-      <div id="statusConexao" class="status-conexao">
+    <header class="header-principal" role="banner">
+      <h1 tabindex="0">📱 WhatsApp Assistant</h1>
+      <div id="statusConexao" class="status-conexao" aria-live="polite">
         <span id="textoConexao">⏳ Verificando...</span>
       </div>
     </header>
 
     <!-- Tabs de Navegação -->
-    <div class="tabs-navegacao">
-      <button class="tab-btn ativo" data-tab="painel">📊 Painel</button>
-      <button class="tab-btn" data-tab="contatos">👥 Contatos</button>
-      <button class="tab-btn" data-tab="conversas">💬 Conversas</button>
-      <button class="tab-btn" data-tab="enviar">✉️ Enviar</button>
-      <button class="tab-btn" data-tab="automacao">🕒 Automação</button>
-      <button class="tab-btn" data-tab="grupos">👪 Grupos</button>
-      <button class="tab-btn" data-tab="respostas">📨 Respostas</button>
-      <button class="tab-btn" data-tab="campanhas">📣 Campanhas</button>
-      <button class="tab-btn" data-tab="etiquetas">🏷️ Etiquetas</button>
-      <button class="tab-btn" data-tab="funil">🧩 Funil</button>
-      <button class="tab-btn" data-tab="relatorios">📈 Relatórios</button>
-      <button class="tab-btn" data-tab="historico">📋 Histórico</button>
-    </div>
+    <nav class="tabs-navegacao" aria-label="Navegação principal">
+      <button class="tab-btn ativo" data-tab="painel" aria-selected="true" tabindex="0">📊 Painel</button>
+      <button class="tab-btn" data-tab="contatos" aria-selected="false" tabindex="0">👥 Contatos</button>
+      <button class="tab-btn" data-tab="conversas" aria-selected="false" tabindex="0">💬 Conversas</button>
+      <button class="tab-btn" data-tab="enviar" aria-selected="false" tabindex="0">✉️ Enviar</button>
+      <button class="tab-btn" data-tab="automacao" aria-selected="false" tabindex="0">🕒 Automação</button>
+      <button class="tab-btn" data-tab="grupos" aria-selected="false" tabindex="0">👪 Grupos</button>
+      <button class="tab-btn" data-tab="respostas" aria-selected="false" tabindex="0">📨 Respostas</button>
+      <button class="tab-btn" data-tab="campanhas" aria-selected="false" tabindex="0">📣 Campanhas</button>
+      <button class="tab-btn" data-tab="etiquetas" aria-selected="false" tabindex="0">🏷️ Etiquetas</button>
+      <button class="tab-btn" data-tab="funil" aria-selected="false" tabindex="0">🧩 Funil</button>
+      <button class="tab-btn" data-tab="relatorios" aria-selected="false" tabindex="0">📈 Relatórios</button>
+      <button class="tab-btn" data-tab="historico" aria-selected="false" tabindex="0">📋 Histórico</button>
+    </nav>
 
     <!-- Conteúdo das Abas -->
-    <div class="conteudo-tabs">
+    <div class="conteudo-tabs" aria-live="polite">
       <!-- TAB 1: PAINEL GERENCIAL -->
-      <div id="painel" class="tab-content ativo">
+      <section id="painel" class="tab-content ativo" aria-labelledby="tab-painel">
         <div class="painel-container">
           <!-- Status -->
-          <div class="card-status">
+          <div class="card-status" role="status" aria-live="polite">
             <h2>Status</h2>
             <div class="status-info">
               <p><strong>Contatos Carregados:</strong> <span id="totalContatos">0</span></p>
@@ -48,7 +48,7 @@
           </div>
 
           <!-- Controles Principais -->
-          <div class="card-controles">
+          <div class="card-controles" aria-label="Controles principais">
             <h2>Controles</h2>
             <div class="controles-grid">
               <!-- Atualizar Contatos -->
@@ -89,14 +89,14 @@
           </div>
 
           <!-- Dica -->
-          <div class="card-dica">
-            <p>💡 <strong>Dica:</strong> Ative o "Modo Seleção WhatsApp" para clicar diretamente nos contatos</p>
+          <div class="card-dica" role="note">
+            <p>💡 <strong>Dica:</strong> Ative o <b>Modo Seleção WhatsApp</b> para clicar diretamente nos contatos.</p>
           </div>
         </div>
       </div>
 
       <!-- TAB 2: CONTATOS -->
-      <div id="contatos" class="tab-content">
+      <section id="contatos" class="tab-content" aria-labelledby="tab-contatos">
         <div class="contatos-container">
           <div class="busca-contatos">
             <input 
@@ -114,7 +114,7 @@
       </div>
 
       <!-- TAB 3: ENVIAR -->
-      <div id="enviar" class="tab-content">
+      <section id="enviar" class="tab-content" aria-labelledby="tab-enviar">
         <div class="envio-container">
           <!-- Destinatários Selecionados -->
           <div class="secao-destinatarios">
@@ -185,7 +185,7 @@
       </div>
 
       <!-- TAB 3.5: CONVERSAS -->
-      <div id="conversas" class="tab-content">
+      <section id="conversas" class="tab-content" aria-labelledby="tab-conversas">
         <div class="conversas-container">
           <div class="chats-panel">
             <div class="chats-header">
@@ -224,7 +224,7 @@
       </div>
 
       <!-- TAB 4: HISTÓRICO -->
-      <div id="historico" class="tab-content">
+      <section id="historico" class="tab-content" aria-labelledby="tab-historico">
         <div class="historico-container">
           <div id="listaHistorico" class="lista-historico">
             <p class="vazio">Nenhum envio realizado</p>
@@ -233,7 +233,7 @@
       </div>
 
       <!-- TAB 5: AUTOMAÇÃO -->
-      <div id="automacao" class="tab-content">
+      <section id="automacao" class="tab-content" aria-labelledby="tab-automacao">
         <div class="envio-container">
           <div class="secao-mensagem">
             <h3>Lista de números</h3>
@@ -286,7 +286,7 @@
       </div>
 
       <!-- TAB 6: GRUPOS -->
-      <div id="grupos" class="tab-content">
+      <section id="grupos" class="tab-content" aria-labelledby="tab-grupos">
         <div class="envio-container">
           <div class="secao-mensagem">
             <h3>Criar Grupo</h3>
@@ -314,7 +314,7 @@
       </div>
 
       <!-- TAB 7: RESPOSTAS -->
-      <div id="respostas" class="tab-content">
+      <section id="respostas" class="tab-content" aria-labelledby="tab-respostas">
         <div class="historico-container">
           <div class="botoes-envio">
             <button id="btnAtualizarRespostas" class="btn btn-primary">🔄 Atualizar Respostas</button>
@@ -326,7 +326,7 @@
       </div>
 
       <!-- TAB 8: CAMPANHAS -->
-      <div id="campanhas" class="tab-content">
+      <section id="campanhas" class="tab-content" aria-labelledby="tab-campanhas">
         <div class="envio-container">
           <div class="secao-mensagem">
             <h3>Criar Campanha</h3>
@@ -350,7 +350,7 @@
       </div>
 
       <!-- TAB 9: ETIQUETAS -->
-      <div id="etiquetas" class="tab-content">
+      <section id="etiquetas" class="tab-content" aria-labelledby="tab-etiquetas">
         <div class="envio-container">
           <div class="secao-mensagem">
             <h3>Criar Etiqueta</h3>
@@ -373,7 +373,7 @@
       </div>
 
       <!-- TAB 10: FUNIL -->
-      <div id="funil" class="tab-content">
+      <section id="funil" class="tab-content" aria-labelledby="tab-funil">
         <div class="envio-container">
           <div class="secao-mensagem">
             <h3>Atualizar Funil</h3>
@@ -396,7 +396,7 @@
       </div>
 
       <!-- TAB 11: RELATÓRIOS -->
-      <div id="relatorios" class="tab-content">
+      <section id="relatorios" class="tab-content" aria-labelledby="tab-relatorios">
         <div class="historico-container">
           <div class="botoes-envio">
             <button id="btnAtualizarRelatorios" class="btn btn-primary">🔄 Atualizar Relatórios</button>

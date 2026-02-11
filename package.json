@@ -1,0 +1,5 @@
+{
+  "devDependencies": {
+    "jest-environment-node": "^30.2.0"
+  }
+}
