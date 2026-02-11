@@ -48,13 +48,36 @@ function injectSidebar() {
   // Instead of using an iframe (blocked by Chrome), fetch popup.html and popup.css
   // and inject the markup/styles directly into the page. popup.js will be loaded
   // as a content script (see manifest.json) so it can bind to the injected DOM.
+  // helper: try fetch, fallback to XHR (some pages block fetch to chrome-extension://)
+  function loadText(url) {
+    return new Promise((resolve, reject) => {
+      fetch(url).then((r) => r.text()).then(resolve).catch(() => {
+        try {
+          const xhr = new XMLHttpRequest();
+          xhr.open('GET', url, true);
+          xhr.onreadystatechange = function () {
+            if (xhr.readyState === 4) {
+              if (xhr.status === 0 || (xhr.status >= 200 && xhr.status < 300)) {
+                resolve(xhr.responseText);
+              } else {
+                reject(new Error('XHR failed ' + xhr.status));
+              }
+            }
+          };
+          xhr.onerror = () => reject(new Error('XHR error'));
+          xhr.send();
+        } catch (e) {
+          reject(e);
+        }
+      });
+    });
+  }
+
   (async () => {
     try {
       const htmlUrl = chrome.runtime.getURL('popup.html');
       const cssUrl = chrome.runtime.getURL('popup.css');
-      const [htmlResp, cssResp] = await Promise.all([fetch(htmlUrl), fetch(cssUrl)]);
-      const htmlText = await htmlResp.text();
-      const cssText = await cssResp.text();
+      const [htmlText, cssText] = await Promise.all([loadText(htmlUrl), loadText(cssUrl)]);
 
       // Parse HTML and extract body content
       const parser = new DOMParser();
