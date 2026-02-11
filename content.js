@@ -21,12 +21,18 @@ function injectSidebar() {
   const style = document.createElement('style');
   style.id = 'emidia-sidebar-style';
   style.textContent = `
-    #emidia-sidebar { position: fixed; right: 0; top: 0; height: 100vh; width: 420px; max-width: 100vw; z-index: 2147483647; box-shadow: -6px 0 24px rgba(0,0,0,0.24); transition: transform .22s ease; transform: translateX(100%); }
+    #emidia-sidebar { position: fixed; right: 0; top: 0; height: 100vh; width: 420px; max-width: 100vw; z-index: 2147483647; box-shadow: -6px 0 24px rgba(0,0,0,0.24); transition: transform .22s ease; transform: translateX(100%); background: #fff; display: flex; flex-direction: column; }
     #emidia-sidebar.open { transform: translateX(0); }
+    #emidia-sidebar.minimized { width: 56px; overflow: hidden; }
+    #emidia-sidebar.closed { display: none; }
+    #emidia-popup-container { flex: 1; overflow: auto; }
     #emidia-sidebar iframe { width: 100%; height: 100%; border: 0; }
     #emidia-sidebar-toggle { position: fixed; right: 420px; top: 140px; width: 48px; height: 140px; background: linear-gradient(180deg,#25d366,#128c7e); color: #fff; display:flex;align-items:center;justify-content:center;border-radius:8px 0 0 8px; z-index:2147483647; cursor:pointer; box-shadow: -4px 2px 12px rgba(0,0,0,0.18); }
     #emidia-sidebar-toggle.collapsed { right: 0; border-radius: 0 0 0 0; transform: translateX(0); }
     #emidia-sidebar-toggle span { writing-mode: vertical-rl; transform: rotate(180deg); font-weight:700; font-size:13px; }
+    .emidia-controls { display:flex; gap:8px; padding:8px; justify-content:flex-end; align-items:center; border-bottom:1px solid rgba(0,0,0,0.06); }
+    .emidia-controls button { background: transparent; border: none; font-size:16px; padding:6px 8px; cursor:pointer; border-radius:6px; }
+    .emidia-controls button:hover { background: rgba(0,0,0,0.04); }
     @media(max-width:600px){ #emidia-sidebar{width: 100vw;} #emidia-sidebar-toggle{right: calc(100vw - 44px);} }
   `;
   document.head.appendChild(style);
@@ -64,12 +70,49 @@ function injectSidebar() {
       styleEl.textContent = cssText;
       sidebar.appendChild(styleEl);
 
+      // Controls (minimize / close)
+      const controls = document.createElement('div');
+      controls.className = 'emidia-controls';
+      controls.innerHTML = `
+        <button id="emidia-minimize" title="Minimizar">—</button>
+        <button id="emidia-close" title="Fechar">✕</button>
+      `;
+      sidebar.appendChild(controls);
+
       // Create container for popup content
       const container = document.createElement('div');
       container.id = 'emidia-popup-container';
       container.innerHTML = cleaned;
       sidebar.appendChild(container);
       document.body.appendChild(sidebar);
+      // state handling (open/minimized/closed)
+      const stateKey = 'emidia-sidebar-state';
+      const saved = localStorage.getItem(stateKey) || 'open';
+      if (saved === 'open') {
+        sidebar.classList.add('open');
+        toggle.classList.remove('collapsed');
+      } else if (saved === 'minimized') {
+        sidebar.classList.add('open', 'minimized');
+        toggle.classList.remove('collapsed');
+      } else if (saved === 'closed') {
+        sidebar.classList.add('closed');
+        toggle.classList.add('collapsed');
+      }
+
+      // wire controls
+      document.getElementById('emidia-minimize')?.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const isMin = sidebar.classList.toggle('minimized');
+        if (isMin) localStorage.setItem(stateKey, 'minimized');
+        else localStorage.setItem(stateKey, 'open');
+      });
+      document.getElementById('emidia-close')?.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        sidebar.classList.remove('open');
+        sidebar.classList.add('closed');
+        localStorage.setItem(stateKey, 'closed');
+        toggle.classList.add('collapsed');
+      });
     } catch (err) {
       console.error('Erro ao injetar popup HTML/CSS:', err);
       // fallback: still append empty sidebar so toggle works
@@ -78,8 +121,18 @@ function injectSidebar() {
   })();
 
   function toggleSidebar() {
+    const stateKey = 'emidia-sidebar-state';
     const opened = sidebar.classList.toggle('open');
-    toggle.classList.toggle('collapsed', !opened);
+    sidebar.classList.remove('closed');
+    sidebar.classList.remove('minimized');
+    if (!opened) {
+      sidebar.classList.add('closed');
+      localStorage.setItem(stateKey, 'closed');
+      toggle.classList.add('collapsed');
+    } else {
+      localStorage.setItem(stateKey, 'open');
+      toggle.classList.remove('collapsed');
+    }
     toggle.title = opened ? 'Fechar Assistente' : 'Abrir Assistente';
   }
 
