@@ -22,6 +22,7 @@
     }
   ],
   "action": {
-    "default_title": "WhatsApp Web Assistant"
+    "default_title": "WhatsApp Web Assistant",
+    "default_popup": "popup.html"
   }
 }

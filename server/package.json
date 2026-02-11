@@ -6,12 +6,21 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "node index.js"
+    "dev": "node index.js",
+    "lint": "eslint . --ext .js",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.19.2",
     "qrcode": "^1.5.4",
-    "whatsapp-web.js": "^1.24.0"
+    "whatsapp-web.js": "^1.24.0",
+    "helmet": "^6.0.0",
+    "express-rate-limit": "^6.8.0"
+  },
+  "devDependencies": {
+    "jest": "^30.2.0",
+    "supertest": "^7.2.2",
+    "eslint": "^8.48.0"
   }
 }

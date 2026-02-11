@@ -6,17 +6,28 @@ let listaChatsGlobal = [];
 let chatSelecionadoId = null;
 
 const API_BASE = "http://localhost:3001";
+let API_TOKEN = localStorage.getItem('api_token') || '';
+
+function setApiToken(token) {
+  API_TOKEN = token || '';
+  if (token) localStorage.setItem('api_token', token);
+  else localStorage.removeItem('api_token');
+}
 
 async function apiGet(path) {
-  const res = await fetch(`${API_BASE}${path}`);
+  const headers = {};
+  if (API_TOKEN) headers['x-api-token'] = API_TOKEN;
+  const res = await fetch(`${API_BASE}${path}`, { headers });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
 
 async function apiPost(path, body) {
+  const headers = { "Content-Type": "application/json" };
+  if (API_TOKEN) headers['x-api-token'] = API_TOKEN;
   const res = await fetch(`${API_BASE}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(body)
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -71,6 +82,33 @@ document.addEventListener("DOMContentLoaded", () => {
   const tabBtns = document.querySelectorAll(".tab-btn");
   const tabContents = document.querySelectorAll(".tab-content");
   const textoConexao = document.getElementById("textoConexao");
+  // Token UI
+  const apiTokenInput = document.getElementById('apiTokenInput');
+  const saveApiTokenBtn = document.getElementById('saveApiToken');
+  if (apiTokenInput) apiTokenInput.value = API_TOKEN || '';
+  if (saveApiTokenBtn) {
+    saveApiTokenBtn.addEventListener('click', () => {
+      const v = (apiTokenInput && apiTokenInput.value) ? apiTokenInput.value.trim() : '';
+      setApiToken(v);
+      textoConexao.textContent = v ? 'Token salvo' : 'Token removido';
+      // refresh connection status
+      setTimeout(() => carregarStatus(), 200);
+    });
+  }
+
+  async function carregarStatus() {
+    try {
+      const st = await apiGet('/status');
+      textoConexao.textContent = st.ready ? '✅ Backend conectado' : (st.hasQr ? '⚠️ Escaneie o QR' : '❌ Backend offline');
+      return st;
+    } catch (e) {
+      textoConexao.textContent = '❌ Backend offline';
+      return null;
+    }
+  }
+
+  // initial status check
+  carregarStatus();
 
   // PAINEL
   const totalContatos = document.getElementById("totalContatos");

@@ -1,5 +1,7 @@
 # Emidia-whatssap / WhatsApp Web Assistant - Extensão Chrome
 
+![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)
+
 Uma extensão Chrome para adicionar funcionalidades extras ao WhatsApp Web, com backend Node.js para automação de mensageria transacional.
 
 ## 📋 Estrutura do Projeto
