@@ -110,14 +110,7 @@ app.get("/schedules", (_req, res) => {
   res.json({ schedules: store.schedules || [] });
 });
 
-<<<<<<< HEAD
-app.get("/contacts", async (_req, res) => {
-  if (!clientReady) {
-    return res.status(401).json({ error: "whatsapp_not_authenticated" });
-  }
-=======
 app.get("/contacts", authMiddleware, async (_req, res) => {
->>>>>>> a20ebc8135170b45ffa0563a09f4e2ea0ef5283c
   try {
     const contacts = await client.getContacts();
     const mapped = contacts
@@ -414,59 +407,5 @@ if (process.env.NODE_ENV !== 'test') {
   });
 }
 
-<<<<<<< HEAD
-    try {
-      let media = null;
-      if (sched.uploadId) {
-        const upload = (store.uploads || []).find((u) => u.id === sched.uploadId);
-        if (upload && fs.existsSync(upload.path)) {
-          media = MessageMedia.fromFilePath(upload.path);
-        }
-      }
-
-      for (const n of sched.numbers) {
-        const jid = `${String(n).replace(/\D/g, "")}@c.us`;
-
-        // Simula presença (composing)
-        await client.sendPresenceAvailable();
-        await client.sendPresenceUpdate('composing', jid);
-        await new Promise(r => setTimeout(r, Math.floor(Math.random() * 2000) + 3000)); // 3-5s
-
-        // Varia mensagem (spintax)
-        let msgFinal = sched.message || "";
-        // Exemplo: pode passar variáveis como nome, etc.
-        msgFinal = spintax(msgFinal, { nome: n });
-
-        if (media) {
-          await client.sendMessage(jid, media, { caption: msgFinal });
-        } else {
-          await client.sendMessage(jid, msgFinal);
-        }
-
-        // Jitter entre envios
-        await new Promise(r => setTimeout(r, randomDelay()));
-      }
-
-      sched.status = "sent";
-      sched.sentAt = Date.now();
-    } catch {
-      sched.status = "failed";
-      sched.sentAt = Date.now();
-    }
-  }
-  saveStore(store);
-}, 10000);
-
-
-app.listen(PORT, () => {
-  console.log(`WhatsApp backend rodando na porta ${PORT}`);
-});
-
-// Rota raiz para status do backend
-app.get('/', (req, res) => {
-  res.json({ status: 'Backend WhatsApp rodando', timestamp: new Date().toISOString() });
-});
-
-=======
->>>>>>> a20ebc8135170b45ffa0563a09f4e2ea0ef5283c
+// ...existing code...
 export default app;
