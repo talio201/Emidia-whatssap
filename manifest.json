@@ -18,17 +18,16 @@
   "content_scripts": [
     {
       "matches": ["https://web.whatsapp.com/*"],
-      "js": ["content.js", "popup.js"]
+      "js": ["content.js"]
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["popup.html", "popup.css"],
+      "resources": ["popup.html", "popup.css", "popup.js"],
       "matches": ["https://web.whatsapp.com/*"]
     }
   ],
   "action": {
-    "default_title": "WhatsApp Web Assistant",
-    "default_popup": "popup.html"
+    "default_title": "WhatsApp Web Assistant"
   }
 }

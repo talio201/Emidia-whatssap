@@ -1,4 +1,5 @@
 // Popup Script - Versão 3.0 Dashboard
+window.initPopupAssistant = function initPopupAssistant(root=document) {
 let listaContatosGlobal = [];
 let contatosSelecionados = [];
 let modoWhatsAppAtivo = false;
@@ -14,24 +15,57 @@ function setApiToken(token) {
   else localStorage.removeItem('api_token');
 }
 
+// also persist API token to extension storage so content script can read it
+function persistApiTokenToChromeStorage(token) {
+  try {
+    if (window.chrome && chrome.storage && chrome.storage.local && typeof chrome.storage.local.set === 'function') {
+      const obj = { api_token: token || '' };
+      chrome.storage.local.set(obj, () => {
+        // ignore errors
+      });
+    }
+  } catch (e) {
+    // chrome.storage not available in page context — ignore
+  }
+}
+
 async function apiGet(path) {
   const headers = {};
   if (API_TOKEN) headers['x-api-token'] = API_TOKEN;
-  const res = await fetch(`${API_BASE}${path}`, { headers });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+  try {
+    console.log('[Emidia][apiGet] GET', `${API_BASE}${path}`, headers);
+    const res = await fetch(`${API_BASE}${path}`, { headers });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      console.error('[Emidia][apiGet] HTTP error', res.status, text);
+      throw new Error(`HTTP ${res.status} ${text}`);
+    }
+    return res.json();
+  } catch (err) {
+    console.error('[Emidia][apiGet] fetch error', err);
+    throw err;
+  }
 }
-
 async function apiPost(path, body) {
   const headers = { "Content-Type": "application/json" };
   if (API_TOKEN) headers['x-api-token'] = API_TOKEN;
-  const res = await fetch(`${API_BASE}${path}`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body)
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+  try {
+    console.log('[Emidia][apiPost] POST', `${API_BASE}${path}`, body, headers);
+    const res = await fetch(`${API_BASE}${path}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      console.error('[Emidia][apiPost] HTTP error', res.status, text);
+      throw new Error(`HTTP ${res.status} ${text}`);
+    }
+    return res.json();
+  } catch (err) {
+    console.error('[Emidia][apiPost] fetch error', err);
+    throw err;
+  }
 }
 
 // Classe para gerenciar histórico
@@ -70,30 +104,55 @@ class GerenciadorHistorico {
 const historico = new GerenciadorHistorico();
 
 // Listener para receber contatos clicados no WhatsApp
+if (window.chrome && chrome.runtime && chrome.runtime.onMessage) {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "contatoSelecionado" && modoWhatsAppAtivo) {
     console.log("Contato do WhatsApp:", request.contato);
     adicionarContatoGlobal(request.contato);
   }
 });
+}
 
-document.addEventListener("DOMContentLoaded", () => {
+// Em vez de DOMContentLoaded, inicializa diretamente
+(function popupInit(){
+  // helper to get elements inside root (document or container)
+  const $id = (id) => (root && typeof root.getElementById === 'function') ? root.getElementById(id) : root.querySelector('#' + id);
   // Elementos gerais
-  const tabBtns = document.querySelectorAll(".tab-btn");
-  const tabContents = document.querySelectorAll(".tab-content");
-  const textoConexao = document.getElementById("textoConexao");
+  const tabBtns = root.querySelectorAll(".tab-btn");
+  const tabContents = root.querySelectorAll(".tab-content");
+  const textoConexao = $id("textoConexao");
   // Token UI
-  const apiTokenInput = document.getElementById('apiTokenInput');
-  const saveApiTokenBtn = document.getElementById('saveApiToken');
+  const apiTokenInput = $id('apiTokenInput');
+  const saveApiTokenBtn = $id('saveApiToken');
   if (apiTokenInput) apiTokenInput.value = API_TOKEN || '';
   if (saveApiTokenBtn) {
     saveApiTokenBtn.addEventListener('click', () => {
       const v = (apiTokenInput && apiTokenInput.value) ? apiTokenInput.value.trim() : '';
       setApiToken(v);
+      persistApiTokenToChromeStorage(v);
       textoConexao.textContent = v ? 'Token salvo' : 'Token removido';
       // refresh connection status
       setTimeout(() => carregarStatus(), 200);
     });
+  }
+
+  // If chrome.storage has a saved token (from previous save), sync it into localStorage
+  try {
+    if (window.chrome && chrome.storage && chrome.storage.local && typeof chrome.storage.local.get === 'function') {
+      chrome.storage.local.get('api_token', (res) => {
+        try {
+          if (res && res.api_token) {
+            API_TOKEN = res.api_token;
+            if (apiTokenInput) apiTokenInput.value = API_TOKEN;
+            localStorage.setItem('api_token', API_TOKEN);
+          }
+        } catch (e) {
+          // ignore
+        }
+      });
+    }
+  } catch (e) {
+    // chrome.storage not available here
   }
 
   async function carregarStatus() {
@@ -111,104 +170,104 @@ document.addEventListener("DOMContentLoaded", () => {
   carregarStatus();
 
   // PAINEL
-  const totalContatos = document.getElementById("totalContatos");
-  const totalSelecionados = document.getElementById("totalSelecionados");
-  const totalEnvios = document.getElementById("totalEnvios");
-  const btnAtualizarContatos = document.getElementById("btnAtualizarContatos");
-  const toggleModoWhatsApp = document.getElementById("toggleModoWhatsApp");
-  const textoModoWhatsApp = document.getElementById("textoModoWhatsApp");
-  const btnLimparSelecao = document.getElementById("btnLimparSelecao");
-  const btnLimparHistorico = document.getElementById("btnLimparHistorico");
-  const statusCarregar = document.getElementById("statusCarregar");
+  const totalContatos = $id("totalContatos");
+  const totalSelecionados = $id("totalSelecionados");
+  const totalEnvios = $id("totalEnvios");
+  const btnAtualizarContatos = $id("btnAtualizarContatos");
+  const toggleModoWhatsApp = $id("toggleModoWhatsApp");
+  const textoModoWhatsApp = $id("textoModoWhatsApp");
+  const btnLimparSelecao = $id("btnLimparSelecao");
+  const btnLimparHistorico = $id("btnLimparHistorico");
+  const statusCarregar = $id("statusCarregar");
 
   // CONTATOS
-  const inputBuscaContatos = document.getElementById("inputBuscaContatos");
-  const listaContatos = document.getElementById("listaContatos");
+  const inputBuscaContatos = $id("inputBuscaContatos");
+  const listaContatos = $id("listaContatos");
 
   // ENVIAR
-  const contatoInput = document.getElementById("contatoInput");
-  const chipContatos = document.getElementById("chipContatos");
-  const listaContatosRapida = document.getElementById("listaContatosRapida");
-  const mensagem = document.getElementById("mensagem");
-  const intervaloEnvio = document.getElementById("intervaloEnvio");
-  const arquivo = document.getElementById("arquivo");
-  const nomeArquivo = document.getElementById("nomeArquivo");
-  const btnEnviarMensagem = document.getElementById("btnEnviarMensagem");
-  const statusEnvio = document.getElementById("statusEnvio");
+  const contatoInput = $id("contatoInput");
+  const chipContatos = $id("chipContatos");
+  const listaContatosRapida = $id("listaContatosRapida");
+  const mensagem = $id("mensagem");
+  const intervaloEnvio = $id("intervaloEnvio");
+  const arquivo = $id("arquivo");
+  const nomeArquivo = $id("nomeArquivo");
+  const btnEnviarMensagem = $id("btnEnviarMensagem");
+  const statusEnvio = $id("statusEnvio");
 
   // CONVERSAS
-  const inputBuscaChats = document.getElementById("inputBuscaChats");
-  const btnAtualizarChats = document.getElementById("btnAtualizarChats");
-  const listaChats = document.getElementById("listaChats");
-  const chatTitulo = document.getElementById("chatTitulo");
-  const chatSubtitulo = document.getElementById("chatSubtitulo");
-  const listaMensagens = document.getElementById("listaMensagens");
-  const mensagemConversa = document.getElementById("mensagemConversa");
-  const arquivoConversa = document.getElementById("arquivoConversa");
-  const btnEnviarConversa = document.getElementById("btnEnviarConversa");
-  const statusConversa = document.getElementById("statusConversa");
+  const inputBuscaChats = $id("inputBuscaChats");
+  const btnAtualizarChats = $id("btnAtualizarChats");
+  const listaChats = $id("listaChats");
+  const chatTitulo = $id("chatTitulo");
+  const chatSubtitulo = $id("chatSubtitulo");
+  const listaMensagens = $id("listaMensagens");
+  const mensagemConversa = $id("mensagemConversa");
+  const arquivoConversa = $id("arquivoConversa");
+  const btnEnviarConversa = $id("btnEnviarConversa");
+  const statusConversa = $id("statusConversa");
 
   // AUTOMAÇÃO
-  const listaNumeros = document.getElementById("listaNumeros");
-  const dataHoraEnvio = document.getElementById("dataHoraEnvio");
-  const mensagemAgendada = document.getElementById("mensagemAgendada");
-  const arquivoAgendado = document.getElementById("arquivoAgendado");
-  const nomeArquivoAgendado = document.getElementById("nomeArquivoAgendado");
-  const btnAgendar = document.getElementById("btnAgendar");
-  const statusAgendamento = document.getElementById("statusAgendamento");
-  const arquivoCSV = document.getElementById("arquivoCSV");
-  const nomeArquivoCSV = document.getElementById("nomeArquivoCSV");
-  const templateSelect = document.getElementById("templateSelect");
-  const btnSalvarTemplate = document.getElementById("btnSalvarTemplate");
-  const btnAtualizarAgendamentos = document.getElementById("btnAtualizarAgendamentos");
-  const listaAgendamentos = document.getElementById("listaAgendamentos");
+  const listaNumeros = $id("listaNumeros");
+  const dataHoraEnvio = $id("dataHoraEnvio");
+  const mensagemAgendada = $id("mensagemAgendada");
+  const arquivoAgendado = $id("arquivoAgendado");
+  const nomeArquivoAgendado = $id("nomeArquivoAgendado");
+  const btnAgendar = $id("btnAgendar");
+  const statusAgendamento = $id("statusAgendamento");
+  const arquivoCSV = $id("arquivoCSV");
+  const nomeArquivoCSV = $id("nomeArquivoCSV");
+  const templateSelect = $id("templateSelect");
+  const btnSalvarTemplate = $id("btnSalvarTemplate");
+  const btnAtualizarAgendamentos = $id("btnAtualizarAgendamentos");
+  const listaAgendamentos = $id("listaAgendamentos");
 
   // GRUPOS
-  const nomeGrupo = document.getElementById("nomeGrupo");
-  const numerosGrupo = document.getElementById("numerosGrupo");
-  const selectGrupo = document.getElementById("selectGrupo");
-  const numerosGrupoEditar = document.getElementById("numerosGrupoEditar");
-  const btnCriarGrupo = document.getElementById("btnCriarGrupo");
-  const btnAdicionarGrupo = document.getElementById("btnAdicionarGrupo");
-  const btnRemoverGrupo = document.getElementById("btnRemoverGrupo");
-  const btnAtualizarGrupos = document.getElementById("btnAtualizarGrupos");
-  const statusGrupos = document.getElementById("statusGrupos");
+  const nomeGrupo = $id("nomeGrupo");
+  const numerosGrupo = $id("numerosGrupo");
+  const selectGrupo = $id("selectGrupo");
+  const numerosGrupoEditar = $id("numerosGrupoEditar");
+  const btnCriarGrupo = $id("btnCriarGrupo");
+  const btnAdicionarGrupo = $id("btnAdicionarGrupo");
+  const btnRemoverGrupo = $id("btnRemoverGrupo");
+  const btnAtualizarGrupos = $id("btnAtualizarGrupos");
+  const statusGrupos = $id("statusGrupos");
 
   // RESPOSTAS
-  const btnAtualizarRespostas = document.getElementById("btnAtualizarRespostas");
-  const listaRespostas = document.getElementById("listaRespostas");
+  const btnAtualizarRespostas = $id("btnAtualizarRespostas");
+  const listaRespostas = $id("listaRespostas");
 
   // CAMPANHAS
-  const campanhaNome = document.getElementById("campanhaNome");
-  const campanhaNumeros = document.getElementById("campanhaNumeros");
-  const campanhaMensagem = document.getElementById("campanhaMensagem");
-  const btnCriarCampanha = document.getElementById("btnCriarCampanha");
-  const btnAtualizarCampanhas = document.getElementById("btnAtualizarCampanhas");
-  const listaCampanhas = document.getElementById("listaCampanhas");
-  const statusCampanhas = document.getElementById("statusCampanhas");
+  const campanhaNome = $id("campanhaNome");
+  const campanhaNumeros = $id("campanhaNumeros");
+  const campanhaMensagem = $id("campanhaMensagem");
+  const btnCriarCampanha = $id("btnCriarCampanha");
+  const btnAtualizarCampanhas = $id("btnAtualizarCampanhas");
+  const listaCampanhas = $id("listaCampanhas");
+  const statusCampanhas = $id("statusCampanhas");
 
   // ETIQUETAS
-  const tagNome = document.getElementById("tagNome");
-  const tagNumeros = document.getElementById("tagNumeros");
-  const tagLista = document.getElementById("tagLista");
-  const btnCriarTag = document.getElementById("btnCriarTag");
-  const btnAplicarTags = document.getElementById("btnAplicarTags");
-  const statusTags = document.getElementById("statusTags");
+  const tagNome = $id("tagNome");
+  const tagNumeros = $id("tagNumeros");
+  const tagLista = $id("tagLista");
+  const btnCriarTag = $id("btnCriarTag");
+  const btnAplicarTags = $id("btnAplicarTags");
+  const statusTags = $id("statusTags");
 
   // FUNIL
-  const funilNumero = document.getElementById("funilNumero");
-  const funilEtapa = document.getElementById("funilEtapa");
-  const btnAtualizarFunil = document.getElementById("btnAtualizarFunil");
-  const btnVerFunil = document.getElementById("btnVerFunil");
-  const listaFunil = document.getElementById("listaFunil");
-  const statusFunil = document.getElementById("statusFunil");
+  const funilNumero = $id("funilNumero");
+  const funilEtapa = $id("funilEtapa");
+  const btnAtualizarFunil = $id("btnAtualizarFunil");
+  const btnVerFunil = $id("btnVerFunil");
+  const listaFunil = $id("listaFunil");
+  const statusFunil = $id("statusFunil");
 
   // RELATÓRIOS
-  const btnAtualizarRelatorios = document.getElementById("btnAtualizarRelatorios");
-  const listaRelatorios = document.getElementById("listaRelatorios");
+  const btnAtualizarRelatorios = $id("btnAtualizarRelatorios");
+  const listaRelatorios = $id("listaRelatorios");
 
   // HISTÓRICO
-  const listaHistorico = document.getElementById("listaHistorico");
+  const listaHistorico = $id("listaHistorico");
 
   // ===== NAVEGAÇÃO ENTRE ABAS =====
   tabBtns.forEach(btn => {
@@ -221,7 +280,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Adicionar classe ativo ao clicado
       btn.classList.add("ativo");
-      document.getElementById(tabName).classList.add("ativo");
+      const target = $id(tabName);
+      if (target) target.classList.add("ativo");
 
       if (tabName === "conversas") {
         carregarChats();
@@ -416,7 +476,7 @@ document.addEventListener("DOMContentLoaded", () => {
       item.addEventListener("click", () => {
         adicionarContatoGlobal(contato);
         // Mudar para aba ENVIAR
-        document.querySelectorAll(".tab-btn").forEach(b => {
+        tabBtns.forEach(b => {
           if (b.dataset.tab === "enviar") b.click();
         });
       });
@@ -1103,4 +1163,5 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Carregar contatos automaticamente ao abrir a extensão
   btnAtualizarContatos.click();
-});
+})();
+};

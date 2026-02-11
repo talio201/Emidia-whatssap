@@ -21,19 +21,77 @@ function injectSidebar() {
   const style = document.createElement('style');
   style.id = 'emidia-sidebar-style';
   style.textContent = `
-    #emidia-sidebar { position: fixed; right: 0; top: 0; height: 100vh; width: 420px; max-width: 100vw; z-index: 2147483647; box-shadow: -6px 0 24px rgba(0,0,0,0.24); transition: transform .22s ease; transform: translateX(100%); background: #fff; display: flex; flex-direction: column; }
+    #emidia-sidebar {
+      position: fixed;
+      right: 0;
+      top: 0;
+      height: 100vh;
+      width: 800px;
+      max-width: 100vw;
+      z-index: 2147483647;
+      box-shadow: -6px 0 24px rgba(0,0,0,0.24);
+      transition: transform .22s ease;
+      transform: translateX(100%);
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+      border-radius: 0 0 0 0;
+    }
     #emidia-sidebar.open { transform: translateX(0); }
     #emidia-sidebar.minimized { width: 56px; overflow: hidden; }
     #emidia-sidebar.closed { display: none; }
-    #emidia-popup-container { flex: 1; overflow: auto; }
+    #emidia-popup-container {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      max-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background: #fafafa;
+      border-radius: 0 0 0 0;
+    }
     #emidia-sidebar iframe { width: 100%; height: 100%; border: 0; }
-    #emidia-sidebar-toggle { position: fixed; right: 420px; top: 140px; width: 48px; height: 140px; background: linear-gradient(180deg,#25d366,#128c7e); color: #fff; display:flex;align-items:center;justify-content:center;border-radius:8px 0 0 8px; z-index:2147483647; cursor:pointer; box-shadow: -4px 2px 12px rgba(0,0,0,0.18); }
+    #emidia-sidebar-toggle {
+      position: fixed;
+      right: 800px;
+      top: 140px;
+      width: 48px;
+      height: 140px;
+      background: linear-gradient(180deg,#25d366,#128c7e);
+      color: #fff;
+      display:flex;align-items:center;justify-content:center;
+      border-radius:8px 0 0 8px;
+      z-index:2147483647;
+      cursor:pointer;
+      box-shadow: -4px 2px 12px rgba(0,0,0,0.18);
+    }
     #emidia-sidebar-toggle.collapsed { right: 0; border-radius: 0 0 0 0; transform: translateX(0); }
     #emidia-sidebar-toggle span { writing-mode: vertical-rl; transform: rotate(180deg); font-weight:700; font-size:13px; }
-    .emidia-controls { display:flex; gap:8px; padding:8px; justify-content:flex-end; align-items:center; border-bottom:1px solid rgba(0,0,0,0.06); }
+    .emidia-controls {
+      display:flex;
+      gap:8px;
+      padding:8px;
+      justify-content:flex-end;
+      align-items:center;
+      border-bottom:1px solid rgba(0,0,0,0.06);
+      background: #f0f0f0;
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
     .emidia-controls button { background: transparent; border: none; font-size:16px; padding:6px 8px; cursor:pointer; border-radius:6px; }
     .emidia-controls button:hover { background: rgba(0,0,0,0.04); }
-    @media(max-width:600px){ #emidia-sidebar{width: 100vw;} #emidia-sidebar-toggle{right: calc(100vw - 44px);} }
+    /* Responsivo para tablets */
+    @media (max-width: 900px) {
+      #emidia-sidebar { width: 100vw; min-width: 0; }
+      #emidia-sidebar-toggle { right: calc(100vw - 44px); }
+    }
+    @media (max-width: 600px) {
+      #emidia-sidebar { width: 100vw; min-width: 0; }
+      #emidia-sidebar-toggle { right: calc(100vw - 44px); }
+    }
+    /* Esconde scroll externo, menus internos rolam */
+    html, body { overflow-x: hidden !important; }
   `;
   document.head.appendChild(style);
 
@@ -51,22 +109,39 @@ function injectSidebar() {
   // helper: try fetch, fallback to XHR (some pages block fetch to chrome-extension://)
   function loadText(url) {
     return new Promise((resolve, reject) => {
-      fetch(url).then((r) => r.text()).then(resolve).catch(() => {
+      console.log('[Emidia] Tentando carregar recurso:', url);
+      fetch(url).then((r) => {
+        if (!r.ok) {
+          console.error('[Emidia] Fetch falhou para', url, 'Status:', r.status);
+          throw new Error('Fetch falhou: ' + r.status);
+        }
+        return r.text();
+      }).then((text) => {
+        console.log('[Emidia] Sucesso ao carregar via fetch:', url);
+        resolve(text);
+      }).catch((fetchErr) => {
+        console.warn('[Emidia] Fetch falhou, tentando XHR para', url, fetchErr);
         try {
           const xhr = new XMLHttpRequest();
           xhr.open('GET', url, true);
           xhr.onreadystatechange = function () {
             if (xhr.readyState === 4) {
               if (xhr.status === 0 || (xhr.status >= 200 && xhr.status < 300)) {
+                console.log('[Emidia] Sucesso ao carregar via XHR:', url);
                 resolve(xhr.responseText);
               } else {
+                console.error('[Emidia] XHR falhou para', url, 'Status:', xhr.status);
                 reject(new Error('XHR failed ' + xhr.status));
               }
             }
           };
-          xhr.onerror = () => reject(new Error('XHR error'));
+          xhr.onerror = (e) => {
+            console.error('[Emidia] Erro XHR para', url, e);
+            reject(new Error('XHR error'));
+          };
           xhr.send();
         } catch (e) {
+          console.error('[Emidia] Exceção XHR para', url, e);
           reject(e);
         }
       });
@@ -84,7 +159,7 @@ function injectSidebar() {
       const doc = parser.parseFromString(htmlText, 'text/html');
       const bodyHtml = doc.body ? doc.body.innerHTML : htmlText;
 
-      // Remove any script tags to avoid attempted page-context loads
+      // Remove any script tags to evitar tentativa de execução fora do contexto
       const cleaned = bodyHtml.replace(/<script[\s\S]*?<\/script>/gi, '');
 
       // Inject CSS
@@ -107,12 +182,52 @@ function injectSidebar() {
       `;
       sidebar.appendChild(controls);
 
+      // Before injecting, try to copy saved API token from extension storage
+      function getChromeStoredToken() {
+        return new Promise((resolve) => {
+          try {
+            if (chrome && chrome.storage && chrome.storage.local && typeof chrome.storage.local.get === 'function') {
+              chrome.storage.local.get('api_token', (res) => {
+                resolve(res && res.api_token ? res.api_token : null);
+              });
+            } else {
+              resolve(null);
+            }
+          } catch (e) {
+            resolve(null);
+          }
+        });
+      }
+
+      const storedToken = await getChromeStoredToken();
+      if (storedToken) {
+        try { localStorage.setItem('api_token', storedToken); } catch (e) { /* ignore */ }
+      }
+
       // Create container for popup content
       const container = document.createElement('div');
       container.id = 'emidia-popup-container';
       container.innerHTML = cleaned;
       sidebar.appendChild(container);
       document.body.appendChild(sidebar);
+
+      // Executar popup.js manualmente após injeção
+      try {
+        if (window.initPopupAssistant) {
+          window.initPopupAssistant(container);
+        } else {
+          // Carrega popup.js dinamicamente e executa
+          const popupScriptUrl = chrome.runtime.getURL('popup.js');
+          const script = document.createElement('script');
+          script.src = popupScriptUrl;
+          script.onload = function() {
+            if (window.initPopupAssistant) window.initPopupAssistant(container);
+          };
+          document.body.appendChild(script);
+        }
+      } catch (e) {
+        console.error('[Emidia] Falha ao inicializar popup.js:', e);
+      }
       // state handling (open/minimized/closed)
       const stateKey = 'emidia-sidebar-state';
       const saved = localStorage.getItem(stateKey) || 'open';
@@ -219,15 +334,57 @@ function injectSidebar() {
   });
 }
 
-  // inject sidebar on load (open by default)
-  try {
-    injectSidebar();
-    // open by default
-    const existing = document.getElementById('emidia-sidebar');
-    const existingToggle = document.getElementById('emidia-sidebar-toggle');
-    if (existing) existing.classList.add('open');
-    if (existingToggle) existingToggle.classList.remove('collapsed');
-  } catch (e) { console.error('Erro injectSidebar', e); }
+  // Auto-inject sidebar when WhatsApp Web is ready so extension works when
+  // the page is already open (user only needs to reload the WA tab).
+  // The logic below attempts to inject immediately if the page is ready or
+  // waits via MutationObserver until a known WA root element appears.
+  function tryInjectSidebarWhenReady() {
+    if (document.getElementById('emidia-sidebar')) return;
+
+    // Heuristics: WhatsApp Web main/root selectors that indicate UI ready
+    const readySelectors = [
+      '#app',
+      'div[role="main"]',
+      'div[role="navigation"]',
+      'div[data-testid="app-root"]'
+    ];
+
+    for (const sel of readySelectors) {
+      if (document.querySelector(sel)) {
+        try {
+          injectSidebar();
+          return;
+        } catch (e) {
+          console.warn('[Emidia] injectSidebar failed:', e);
+        }
+      }
+    }
+
+    // If not ready, observe for additions to body and attempt injection
+    const observer = new MutationObserver((mutations, obs) => {
+      for (const m of mutations) {
+        if (m.addedNodes && m.addedNodes.length) {
+          for (const sel of readySelectors) {
+            if (document.querySelector(sel)) {
+              try {
+                injectSidebar();
+              } catch (e) {
+                console.warn('[Emidia] injectSidebar via observer failed:', e);
+              }
+              obs.disconnect();
+              return;
+            }
+          }
+        }
+      }
+    });
+    observer.observe(document.documentElement || document.body, { childList: true, subtree: true });
+  }
+
+  // Try inject now (handles reload on already-open WhatsApp), and also when
+  // DOM becomes ready later.
+  tryInjectSidebarWhenReady();
+  document.addEventListener('DOMContentLoaded', tryInjectSidebarWhenReady);
 
 // Função auxiliar para debugar estrutura do botão de envio
 function debugBotaoEnvio() {

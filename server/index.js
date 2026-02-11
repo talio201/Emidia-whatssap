@@ -111,6 +111,7 @@ async function startServer() {
 
   const puppeteerOptions = {
     headless: !browserVisible,
+    userDataDir: userDataDir || path.join(process.env.HOME, 'Library', 'Application Support', 'Google', 'Chrome'), // Usar perfil do navegador padrão
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
@@ -118,91 +119,28 @@ async function startServer() {
       "--disable-gpu"
     ]
   };
-  // Optionally hide the "Chrome is being controlled by automated test software"
-  // banner and related automation flags. When MASK_AUTOMATION=true we remove
-  // the default --enable-automation arg and add a Blink feature toggle that
-  // helps hide AutomationControlled. Not guaranteed to remove all traces but
-  // reduces the banner in many environments.
-  if (process.env.MASK_AUTOMATION === 'true') {
-    puppeteerOptions.ignoreDefaultArgs = ['--enable-automation'];
-    puppeteerOptions.args.push('--disable-blink-features=AutomationControlled');
-  }
 
-  // Optionally load a Chrome extension into the launched profile. Set
-  // LOAD_EXTENSION_DIR to an absolute path to the unpacked extension folder
-  // (the folder that contains the manifest.json). This will add the
-  // --disable-extensions-except and --load-extension flags so the extension
-  // is available in the browser instance controlled by Puppeteer.
-  const loadExt = process.env.LOAD_EXTENSION_DIR;
-  if (loadExt) {
-    puppeteerOptions.args.push(`--disable-extensions-except=${loadExt}`);
-    puppeteerOptions.args.push(`--load-extension=${loadExt}`);
-  }
+  // Verificar se o WhatsApp Web está aberto no navegador
+  const checkWhatsAppWeb = async (browser) => {
+    const pages = await browser.pages();
+    const whatsappPage = pages.find(page => page.url().includes('web.whatsapp.com'));
 
-  // Support reconnecting to an already running Chrome instance instead of
-  // launching a new one. This allows reusing an existing profile that is
-  // already open (so no need to scan QR every run). Use one of:
-  // - BROWSER_WS_ENDPOINT (full websocket URL), or
-  // - REMOTE_DEBUGGING_PORT (numeric port where Chrome exposes the devtools)
-  // and set REUSE_EXISTING_BROWSER=true to enable automatic discovery.
-  const reuseBrowser = process.env.REUSE_EXISTING_BROWSER === 'true';
-  const browserWs = process.env.BROWSER_WS_ENDPOINT;
-  const remotePort = process.env.REMOTE_DEBUGGING_PORT || '9222';
-  if (reuseBrowser) {
-    if (browserWs) {
-      puppeteerOptions.browserWSEndpoint = browserWs;
-      // When connecting to an existing browser, do not attempt to set
-      // executablePath or userDataDir here.
-      delete puppeteerOptions.executablePath;
-      delete puppeteerOptions.userDataDir;
-      console.log('[server] Reusing existing browser via BROWSER_WS_ENDPOINT');
-    } else {
-      // Try to fetch websocket endpoint from local debugging port
-      try {
-        // eslint-disable-next-line no-sync
-        const http = await import('node:http');
-        const url = `http://127.0.0.1:${remotePort}/json/version`;
-        const body = await new Promise((resolve, reject) => {
-          http.get(url, (res) => {
-            let data = '';
-            res.on('data', (chunk) => (data += chunk));
-            res.on('end', () => resolve(data));
-          }).on('error', (err) => reject(err));
-        });
-        const parsed = JSON.parse(body || '{}');
-        if (parsed.webSocketDebuggerUrl) {
-          puppeteerOptions.browserWSEndpoint = parsed.webSocketDebuggerUrl;
-          delete puppeteerOptions.executablePath;
-          delete puppeteerOptions.userDataDir;
-          console.log('[server] Reusing existing browser via remote debugging port ' + remotePort);
-        } else {
-          console.warn('[server] Could not discover websocket endpoint on port ' + remotePort);
-        }
-      } catch (e) {
-        console.warn('[server] Error discovering existing browser:', e.message || e);
-      }
+    if (!whatsappPage) {
+      console.error('[Erro] WhatsApp Web não está aberto no navegador. Abra o WhatsApp Web e tente novamente.');
+      process.exit(1);
     }
-  }
-  // If running visible and no executable specified, prefer the system Chrome
-  if (chromeExecutable) {
-    puppeteerOptions.executablePath = chromeExecutable;
-  } else if (browserVisible) {
-    const defaults = {
-      darwin: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-      linux: '/usr/bin/google-chrome',
-      win32: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
-    };
-    if (defaults[process.platform]) puppeteerOptions.executablePath = defaults[process.platform];
-  }
-  // Do NOT set puppeteer.userDataDir when using LocalAuth storage, as
-  // whatsapp-web.js' LocalAuth manages its own profile and is incompatible
-  // with a user-supplied puppeteer userDataDir. If a raw browser profile
-  // must be used, set USER_DATA_DIR but be aware it may conflict with LocalAuth.
-  if (userDataDir && !authDataDir) puppeteerOptions.userDataDir = userDataDir;
 
-  const localAuthOptions = authDataDir ? { clientId, dataPath: authDataDir } : { clientId };
-  client = new Client({
-    authStrategy: new LocalAuth(localAuthOptions),
+    console.log('[server] WhatsApp Web detectado no navegador.');
+    return whatsappPage;
+  };
+
+  // Inicializar Puppeteer e verificar o WhatsApp Web
+  const browser = await puppeteer.launch(puppeteerOptions);
+  const whatsappPage = await checkWhatsAppWeb(browser);
+
+  // Create client and attach handlers only when running normally
+  const client = new Client({
+    authStrategy: new LocalAuth({ clientId, dataPath: authDataDir }),
     puppeteer: puppeteerOptions
   });
 
