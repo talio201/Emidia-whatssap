@@ -21,6 +21,12 @@
       "js": ["content.js", "popup.js"]
     }
   ],
+  "web_accessible_resources": [
+    {
+      "resources": ["popup.html", "popup.css"],
+      "matches": ["https://web.whatsapp.com/*"]
+    }
+  ],
   "action": {
     "default_title": "WhatsApp Web Assistant",
     "default_popup": "popup.html"
