@@ -80,9 +80,9 @@ let clientReady = false;
 let lastAuthError = null;
 
 const client = new Client({
-  authStrategy: new LocalAuth({ clientId: "default" }),
   puppeteer: {
-    headless: true,
+    headless: false,
+    userDataDir: process.env.CHROME_USER_DATA_DIR || '/home/talio201/.config/google-chrome/Default',
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
