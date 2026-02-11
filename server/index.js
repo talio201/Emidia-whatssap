@@ -216,6 +216,9 @@ app.get("/schedules", (_req, res) => {
 });
 
 app.get("/contacts", async (_req, res) => {
+  if (!clientReady) {
+    return res.status(401).json({ error: "whatsapp_not_authenticated" });
+  }
   try {
     const contacts = await client.getContacts();
     const mapped = contacts
@@ -558,6 +561,9 @@ setInterval(async () => {
   saveStore(store);
 }, 10000);
 
+
 app.listen(PORT, () => {
   console.log(`WhatsApp backend rodando na porta ${PORT}`);
 });
+
+export default app;
