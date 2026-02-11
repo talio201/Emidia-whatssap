@@ -39,11 +39,43 @@ function injectSidebar() {
 
   const sidebar = document.createElement('div');
   sidebar.id = 'emidia-sidebar';
-  const iframe = document.createElement('iframe');
-  // load extension page inside iframe
-  iframe.src = chrome.runtime.getURL('popup.html') + '?embedded=1';
-  sidebar.appendChild(iframe);
-  document.body.appendChild(sidebar);
+  // Instead of using an iframe (blocked by Chrome), fetch popup.html and popup.css
+  // and inject the markup/styles directly into the page. popup.js will be loaded
+  // as a content script (see manifest.json) so it can bind to the injected DOM.
+  (async () => {
+    try {
+      const htmlUrl = chrome.runtime.getURL('popup.html');
+      const cssUrl = chrome.runtime.getURL('popup.css');
+      const [htmlResp, cssResp] = await Promise.all([fetch(htmlUrl), fetch(cssUrl)]);
+      const htmlText = await htmlResp.text();
+      const cssText = await cssResp.text();
+
+      // Parse HTML and extract body content
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(htmlText, 'text/html');
+      const bodyHtml = doc.body ? doc.body.innerHTML : htmlText;
+
+      // Remove any script tags to avoid attempted page-context loads
+      const cleaned = bodyHtml.replace(/<script[\s\S]*?<\/script>/gi, '');
+
+      // Inject CSS
+      const styleEl = document.createElement('style');
+      styleEl.id = 'emidia-popup-css';
+      styleEl.textContent = cssText;
+      sidebar.appendChild(styleEl);
+
+      // Create container for popup content
+      const container = document.createElement('div');
+      container.id = 'emidia-popup-container';
+      container.innerHTML = cleaned;
+      sidebar.appendChild(container);
+      document.body.appendChild(sidebar);
+    } catch (err) {
+      console.error('Erro ao injetar popup HTML/CSS:', err);
+      // fallback: still append empty sidebar so toggle works
+      document.body.appendChild(sidebar);
+    }
+  })();
 
   function toggleSidebar() {
     const opened = sidebar.classList.toggle('open');
