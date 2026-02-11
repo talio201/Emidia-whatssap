@@ -1,0 +1,5 @@
+# Ignore local data and uploads
+server/data/
+
+# macOS
+.DS_Store

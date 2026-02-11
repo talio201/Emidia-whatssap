@@ -1,5 +1,7 @@
 import express from "express";
 import cors from "cors";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import QRCode from "qrcode";
 import fs from "fs";
 import path from "path";
@@ -8,11 +10,27 @@ import pkg from "whatsapp-web.js";
 const { Client, LocalAuth, MessageMedia } = pkg;
 
 
-const API_TOKEN = process.env.API_TOKEN || "changeme";
+const API_TOKEN = process.env.API_TOKEN || (process.env.NODE_ENV === 'test' ? 'test-token' : undefined);
+if (typeof API_TOKEN === 'undefined') {
+  console.error("API_TOKEN not set. Set environment variable API_TOKEN and restart.");
+  process.exit(1);
+}
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: "25mb" }));
+app.use(helmet());
+// Limita o tamanho do JSON para evitar payloads abusivos
+app.use(express.json({ limit: "10mb" }));
+
+// Use express-rate-limit for robust rate limiting
+const globalLimiter = rateLimit({
+  windowMs: 60_000, // 1 minute
+  max: 120, // limit each IP/token to 120 requests per windowMs
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => res.status(429).json({ error: 'rate_limited' })
+});
+app.use(globalLimiter);
 
 // Middleware de autenticação simples por token
 function authMiddleware(req, res, next) {
@@ -78,77 +96,183 @@ const saveStore = (store) => {
 let latestQr = null;
 let clientReady = false;
 let lastAuthError = null;
+let client = null;
 
+<<<<<<< HEAD
 const client = new Client({
   puppeteer: {
     headless: false,
     userDataDir: process.env.CHROME_USER_DATA_DIR || '/home/talio201/.config/google-chrome/Default',
+=======
+// Start client and background tasks only when not running tests
+async function startServer() {
+  // Create client and attach handlers only when running normally
+  const clientId = process.env.CLIENT_ID || 'default';
+  const browserVisible = process.env.BROWSER_VISIBLE === 'true';
+  const chromeExecutable = process.env.CHROME_EXECUTABLE || undefined;
+  const userDataDir = process.env.USER_DATA_DIR || undefined;
+  // Allow specifying a separate auth storage directory (used by LocalAuth)
+  // If not provided, prefer an existing repo-local auth folder so we
+  // automatically reuse an already-authenticated session and avoid
+  // forcing QR scans on every restart.
+  const repoDefaultAuth = path.join(__dirname, '.wwebjs_auth', 'session-default');
+  const authDataDir = process.env.AUTH_DATA_DIR || (fs.existsSync(repoDefaultAuth) ? repoDefaultAuth : undefined);
+  if (authDataDir) console.log('[server] Using LocalAuth dataPath:', authDataDir);
+
+  const puppeteerOptions = {
+    headless: !browserVisible,
+    userDataDir: userDataDir || path.join(process.env.HOME, 'Library', 'Application Support', 'Google', 'Chrome'), // Usar perfil do navegador padrão
+>>>>>>> a20ebc8135170b45ffa0563a09f4e2ea0ef5283c
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
       "--disable-dev-shm-usage",
       "--disable-gpu"
     ]
-  }
-});
+  };
 
-client.on("qr", async (qr) => {
-  try {
-    latestQr = await QRCode.toDataURL(qr);
-    clientReady = false;
-  } catch (e) {
-    latestQr = null;
-  }
-});
+  // Verificar se o WhatsApp Web está aberto no navegador
+  const checkWhatsAppWeb = async (browser) => {
+    const pages = await browser.pages();
+    const whatsappPage = pages.find(page => page.url().includes('web.whatsapp.com'));
 
-client.on("ready", () => {
-  clientReady = true;
-  latestQr = null;
-  lastAuthError = null;
-});
-
-client.on("auth_failure", (msg) => {
-  lastAuthError = msg;
-  clientReady = false;
-});
-
-client.on("disconnected", () => {
-  clientReady = false;
-});
-
-client.on("message", async (msg) => {
-  try {
-    // Simula leitura da mensagem recebida
-    if (msg.from && !msg.fromMe) {
-      try {
-        await msg.getChat().then(chat => chat.sendSeen());
-      } catch {}
+    if (!whatsappPage) {
+      console.error('[Erro] WhatsApp Web não está aberto no navegador. Abra o WhatsApp Web e tente novamente.');
+      process.exit(1);
     }
+
+    console.log('[server] WhatsApp Web detectado no navegador.');
+    return whatsappPage;
+  };
+
+  // Inicializar Puppeteer e verificar o WhatsApp Web
+  const browser = await puppeteer.launch(puppeteerOptions);
+  const whatsappPage = await checkWhatsAppWeb(browser);
+
+  // Create client and attach handlers only when running normally
+  const client = new Client({
+    authStrategy: new LocalAuth({ clientId, dataPath: authDataDir }),
+    puppeteer: puppeteerOptions
+  });
+
+  client.on("qr", async (qr) => {
+    try {
+      latestQr = await QRCode.toDataURL(qr);
+      clientReady = false;
+    } catch (e) {
+      latestQr = null;
+    }
+  });
+
+  client.on("ready", () => {
+    clientReady = true;
+    latestQr = null;
+    lastAuthError = null;
+  });
+
+  client.on("auth_failure", (msg) => {
+    lastAuthError = msg;
+    clientReady = false;
+  });
+
+  client.on("disconnected", () => {
+    clientReady = false;
+  });
+
+  client.on("message", async (msg) => {
+    try {
+      if (msg.from && !msg.fromMe) {
+        try {
+          await msg.getChat().then(chat => chat.sendSeen());
+        } catch (e) {
+          // ignore errors from sendSeen
+        }
+      }
+      const store = loadStore();
+      store.replies.unshift({
+        id: msg.id?._serialized || "",
+        from: msg.from || "",
+        body: msg.body || "",
+        timestamp: msg.timestamp || Date.now(),
+        fromMe: !!msg.fromMe
+      });
+      if (msg.from) {
+        const num = msg.from.replace(/\D/g, "");
+        if (num) {
+          store.funnel[num] = store.funnel[num] || { stage: "Respondeu", updatedAt: Date.now() };
+          store.funnel[num].stage = "Respondeu";
+          store.funnel[num].updatedAt = Date.now();
+        }
+      }
+      store.replies = store.replies.slice(0, 200);
+      saveStore(store);
+    } catch {
+      // ignore
+    }
+  });
+
+  await client.initialize();
+
+  // Scheduler com jitter, composing, spintax, ramp-up e horário humano
+  setInterval(async () => {
     const store = loadStore();
-    store.replies.unshift({
-      id: msg.id?._serialized || "",
-      from: msg.from || "",
-      body: msg.body || "",
-      timestamp: msg.timestamp || Date.now(),
-      fromMe: !!msg.fromMe
-    });
-    // Atualiza funil automaticamente para quem respondeu
-    if (msg.from) {
-      const num = msg.from.replace(/\D/g, "");
-      if (num) {
-        store.funnel[num] = store.funnel[num] || { stage: "Respondeu", updatedAt: Date.now() };
-        store.funnel[num].stage = "Respondeu";
-        store.funnel[num].updatedAt = Date.now();
+    const now = Date.now();
+    const pending = (store.schedules || []).filter((s) => s.status === "pending");
+    for (const sched of pending) {
+      const when = new Date(sched.sendAt).getTime();
+      if (Number.isNaN(when) || when > now) continue;
+
+      // Checa horário humano e ramp-up
+      if (!horarioHumano() || !podeEnviarHoje(store, 50)) {
+        continue;
+      }
+
+      try {
+        let media = null;
+        if (sched.uploadId) {
+          const upload = (store.uploads || []).find((u) => u.id === sched.uploadId);
+          if (upload && fs.existsSync(upload.path)) {
+            media = MessageMedia.fromFilePath(upload.path);
+          }
+        }
+
+        for (const n of sched.numbers) {
+          const jid = `${String(n).replace(/\D/g, "")}@c.us`;
+
+          // Simula presença (composing)
+          await client.sendPresenceAvailable();
+          await client.sendPresenceUpdate('composing', jid);
+          await new Promise(r => setTimeout(r, Math.floor(Math.random() * 2000) + 3000)); // 3-5s
+
+          // Varia mensagem (spintax)
+          let msgFinal = sched.message || "";
+          msgFinal = spintax(msgFinal, { nome: n });
+
+          if (media) {
+            await client.sendMessage(jid, media, { caption: msgFinal });
+          } else {
+            await client.sendMessage(jid, msgFinal);
+          }
+
+          // Jitter entre envios
+          await new Promise(r => setTimeout(r, randomDelay()));
+        }
+
+        sched.status = "sent";
+        sched.sentAt = Date.now();
+      } catch {
+        sched.status = "failed";
+        sched.sentAt = Date.now();
       }
     }
-    store.replies = store.replies.slice(0, 200);
     saveStore(store);
-  } catch {
-    // ignore
-  }
-});
+  }, 10000);
 
-await client.initialize();
+  const BIND_ADDRESS = process.env.BIND_ADDRESS || '127.0.0.1';
+  app.listen(PORT, BIND_ADDRESS, () => {
+    console.log(`WhatsApp backend rodando na porta ${PORT} (bind ${BIND_ADDRESS})`);
+  });
+}
 
 app.get("/status", (_req, res) => {
   res.json({ ready: clientReady, hasQr: !!latestQr, authError: lastAuthError });
@@ -177,10 +301,16 @@ app.get("/qr", (_req, res) => {
 app.post("/upload", authMiddleware, validateStringFields(["filename", "base64", "mime"]), async (req, res) => {
   const { filename, base64, mime } = req.body || {};
   try {
+    // Limita upload a 5MB para evitar abuso
+    const approxBytes = Math.floor((base64.length * 3) / 4);
+    const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+    if (approxBytes > MAX_UPLOAD_BYTES) {
+      return res.status(413).json({ error: 'upload_too_large' });
+    }
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
     const filePath = path.join(uploadsDir, `${id}-${safeName}`);
-    fs.writeFileSync(filePath, Buffer.from(base64, "base64"));
+    await fs.promises.writeFile(filePath, Buffer.from(base64, "base64"));
 
     const store = loadStore();
     store.uploads.push({ id, filename: safeName, mime, path: filePath, createdAt: Date.now() });
@@ -219,10 +349,14 @@ app.get("/schedules", (_req, res) => {
   res.json({ schedules: store.schedules || [] });
 });
 
+<<<<<<< HEAD
 app.get("/contacts", async (_req, res) => {
   if (!clientReady) {
     return res.status(401).json({ error: "whatsapp_not_authenticated" });
   }
+=======
+app.get("/contacts", authMiddleware, async (_req, res) => {
+>>>>>>> a20ebc8135170b45ffa0563a09f4e2ea0ef5283c
   try {
     const contacts = await client.getContacts();
     const mapped = contacts
@@ -509,20 +643,17 @@ function podeEnviarHoje(store, maxPorDia = 50) {
   return enviadosHoje < maxPorDia;
 }
 
-// Scheduler com jitter, composing, spintax, ramp-up e horário humano
-setInterval(async () => {
-  const store = loadStore();
-  const now = Date.now();
-  const pending = (store.schedules || []).filter((s) => s.status === "pending");
-  for (const sched of pending) {
-    const when = new Date(sched.sendAt).getTime();
-    if (Number.isNaN(when) || when > now) continue;
+// Scheduler is started inside startServer() to avoid running during tests
 
-    // Checa horário humano e ramp-up
-    if (!horarioHumano() || !podeEnviarHoje(store, 50)) {
-      continue;
-    }
+// If not in test environment, start client and listen
+if (process.env.NODE_ENV !== 'test') {
+  startServer().catch((e) => {
+    console.error('Falha ao iniciar server:', e);
+    process.exit(1);
+  });
+}
 
+<<<<<<< HEAD
     try {
       let media = null;
       if (sched.uploadId) {
@@ -575,4 +706,6 @@ app.get('/', (req, res) => {
   res.json({ status: 'Backend WhatsApp rodando', timestamp: new Date().toISOString() });
 });
 
+=======
+>>>>>>> a20ebc8135170b45ffa0563a09f4e2ea0ef5283c
 export default app;
