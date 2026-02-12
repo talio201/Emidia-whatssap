@@ -3,12 +3,26 @@ import fs from "fs";
 import path from "path";
 import QRCode from "qrcode";
 import puppeteer from "puppeteer";
-import { Client, LocalAuth, MessageMedia } from "whatsapp-web.js";
+import pkg from "whatsapp-web.js";
+const { Client, LocalAuth, MessageMedia } = pkg;
+import { fileURLToPath } from 'url';
+
+// Configuração para __dirname em ES Modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+
 const PORT = process.env.PORT || 3001;
-const dataFile = path.join(__dirname, "data", "store.json");
-const uploadsDir = path.join(__dirname, "data", "uploads");
+const dataDir = path.join(__dirname, "data");
+const dataFile = path.join(dataDir, "store.json");
+const uploadsDir = path.join(dataDir, "uploads");
+
+// Garante que diretórios existam
+if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
 // Funções utilitárias e variáveis globais
 const loadStore = () => {
@@ -29,14 +43,138 @@ let clientReady = false;
 let lastAuthError = null;
 let client = null;
 
-// ...restante do código...
+// Middleware de autenticação simplificado (pass-through)
+const authMiddleware = (req, res, next) => {
+  // Verifica token apenas se desejar strict mode, mas por padrão agora é aberto/local
+  // const token = req.headers["x-access-token"];
+  // if (process.env.AUTH_TOKEN && token !== process.env.AUTH_TOKEN) return res.status(403).json({ error: "forbidden" });
+  next();
+};
+
+const validateStringFields = (fields) => (req, res, next) => {
+  if (!req.body) return res.status(400).json({ error: "missing_body" });
+  for (const field of fields) {
+    if (typeof req.body[field] !== 'string' || !req.body[field].trim()) {
+      return res.status(400).json({ error: `missing_or_invalid_${field}` });
+    }
+  }
+  next();
+};
+
+async function startServer() {
+  console.log("Iniciando cliente WhatsApp...");
+
+  client = new Client({
+    authStrategy: new LocalAuth({ dataPath: path.join(dataDir, ".wwebjs_auth") }),
+    puppeteer: {
+      headless: false,
+      executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-infobars',
+        `--load-extension=${path.join(__dirname, '../extension')}`
+      ],
+      ignoreDefaultArgs: ['--enable-automation', '--disable-extensions']
+    }
+  });
+
+  client.on('qr', (qr) => {
+    console.log('QR Code recebido. Gere a imagem para escanear.');
+    QRCode.toDataURL(qr, (err, url) => {
+      if (!err) latestQr = url;
+    });
+  });
+
+  client.on('ready', () => {
+    console.log('Cliente WhatsApp conectado e pronto!');
+    clientReady = true;
+    latestQr = null;
+    lastAuthError = null;
+  });
+
+  client.on('authenticated', () => {
+    console.log('Cliente autenticado com sucesso.');
+    lastAuthError = null;
+  });
+
+  client.on('auth_failure', (msg) => {
+    console.error('Falha na autenticação:', msg);
+    lastAuthError = msg;
+    clientReady = false;
+  });
+
+  client.on('disconnected', (reason) => {
+    console.log('Cliente desconectado:', reason);
+    clientReady = false;
+    // Tenta reconectar ou reinicializar se necessário
+    client.initialize();
+  });
+
+  client.on('message', async (msg) => {
+    // Exemplo de log de mensagens recebidas
+    // Pode expandir para salvar no store.replies
+    if (!msg.fromMe) {
+      const store = loadStore();
+      store.replies.push({
+        id: msg.id._serialized,
+        from: msg.from,
+        body: msg.body,
+        timestamp: msg.timestamp,
+        hasMedia: msg.hasMedia,
+        fromMe: false
+      });
+      store.replies = store.replies.slice(-500); // Manter histórico limitado
+      saveStore(store);
+    }
+  });
+
+  await client.initialize();
+
+  // Scheduler loop
+  setInterval(async () => {
+    if (!clientReady) return;
+
+    const store = loadStore();
+    const now = Date.now();
+    // Pega pendentes com data vencida
+    const pending = store.schedules.filter(s => s.status === "pending" && (!s.sendAt || s.sendAt <= now));
+
+    if (pending.length === 0) return;
+
+    console.log(`Processando ${pending.length} agendamentos pendentes...`);
+
+    for (const sched of pending) {
+      if (!podeEnviarHoje(store)) {
+        console.warn("Limite diário atingido. Pausando envios.");
+        break; // Para o processamento se limite atingido
+      }
+
+      try {
+        const { numbers, message, uploadId } = sched;
+        let media = null;
+
+        if (uploadId) {
+          const up = store.uploads.find(u => u.id === uploadId);
+          if (up && fs.existsSync(up.path)) {
+            const b64 = fs.readFileSync(up.path, { encoding: 'base64' });
+            media = new MessageMedia(up.mime, b64, up.filename);
+          }
+        }
+
+        // Garante que numbers é array
+        const targets = Array.isArray(numbers) ? numbers : [];
+
+        for (const n of targets) {
+          const jid = `${String(n).replace(/\D/g, "")}@c.us`;
+
           // Simula presença (composing)
           await client.sendPresenceAvailable();
           await client.sendPresenceUpdate('composing', jid);
           await new Promise(r => setTimeout(r, Math.floor(Math.random() * 2000) + 3000)); // 3-5s
 
           // Varia mensagem (spintax)
-          let msgFinal = sched.message || "";
+          let msgFinal = message || "";
           msgFinal = spintax(msgFinal, { nome: n });
 
           if (media) {
@@ -45,15 +183,27 @@ let client = null;
             await client.sendMessage(jid, msgFinal);
           }
 
+          // Atualiza log de envios para controle de limite
+          store.sentLog.unshift({
+            id: `sched-${Date.now()}`,
+            to: jid,
+            message: msgFinal,
+            campaignId: sched.campaignId,
+            timestamp: Date.now()
+          });
+          store.sentLog = store.sentLog.slice(0, 500);
+
           // Jitter entre envios
           await new Promise(r => setTimeout(r, randomDelay()));
         }
 
         sched.status = "sent";
         sched.sentAt = Date.now();
-      } catch {
+      } catch (e) {
+        console.error(`Erro ao processar agendamento ${sched.id}:`, e);
         sched.status = "failed";
         sched.sentAt = Date.now();
+        sched.error = e.message;
       }
     }
     saveStore(store);
@@ -62,8 +212,11 @@ let client = null;
   const BIND_ADDRESS = process.env.BIND_ADDRESS || '127.0.0.1';
   app.listen(PORT, BIND_ADDRESS, () => {
     console.log(`WhatsApp backend rodando na porta ${PORT} (bind ${BIND_ADDRESS})`);
+    console.log(`Visite http://${BIND_ADDRESS}:${PORT}/qr para ver o QR code se necessário.`);
   });
 }
+
+// ... Routes (mantendo as existentes e garantindo que authMiddleware esteja disponível) ...
 
 app.get("/status", (_req, res) => {
   res.json({ ready: clientReady, hasQr: !!latestQr, authError: lastAuthError });
@@ -71,9 +224,11 @@ app.get("/status", (_req, res) => {
 
 app.get("/qr", (_req, res) => {
   if (!latestQr) {
-    res.status(404).json({ error: "qr_not_ready" });
+    if (clientReady) return res.send("<html><body><h2>Cliente já conectado!</h2></body></html>");
+    res.status(404).send("QR code não pronto ainda. Aguarde...");
     return;
   }
+  // Se latestQr já é base64 (dataURL), mostramos direto
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.end(`
     <html>
@@ -92,9 +247,9 @@ app.get("/qr", (_req, res) => {
 app.post("/upload", authMiddleware, validateStringFields(["filename", "base64", "mime"]), async (req, res) => {
   const { filename, base64, mime } = req.body || {};
   try {
-    // Limita upload a 5MB para evitar abuso
+    // Limita upload a 10MB (aumentado)
     const approxBytes = Math.floor((base64.length * 3) / 4);
-    const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+    const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
     if (approxBytes > MAX_UPLOAD_BYTES) {
       return res.status(413).json({ error: 'upload_too_large' });
     }
@@ -109,6 +264,7 @@ app.post("/upload", authMiddleware, validateStringFields(["filename", "base64", 
 
     res.json({ id });
   } catch (e) {
+    console.error("Upload error:", e);
     res.status(500).json({ error: "upload_failed" });
   }
 });
@@ -125,7 +281,7 @@ app.post("/schedule", authMiddleware, async (req, res) => {
     id,
     numbers,
     message: message || "",
-    sendAt,
+    sendAt, // Timestamp number
     uploadId: uploadId || null,
     campaignId: campaignId || null,
     status: "pending",
@@ -142,6 +298,7 @@ app.get("/schedules", (_req, res) => {
 
 app.get("/contacts", authMiddleware, async (_req, res) => {
   try {
+    if (!clientReady) return res.status(503).json({ error: "client_not_ready" });
     const contacts = await client.getContacts();
     const mapped = contacts
       .filter((c) => c.id && c.id.user)
@@ -152,12 +309,14 @@ app.get("/contacts", authMiddleware, async (_req, res) => {
       }));
     res.json({ contatos: mapped });
   } catch (e) {
+    console.error("Contacts error:", e);
     res.status(500).json({ error: "contacts_failed" });
   }
 });
 
-app.get("/chats", async (_req, res) => {
+app.get("/chats", authMiddleware, async (_req, res) => {
   try {
+    if (!clientReady) return res.status(503).json({ error: "client_not_ready" });
     const chats = await client.getChats();
     const mapped = chats.map((c) => ({
       id: c.id?._serialized || "",
@@ -169,6 +328,7 @@ app.get("/chats", async (_req, res) => {
     }));
     res.json({ chats: mapped });
   } catch (e) {
+    console.error("Chats error:", e);
     res.status(500).json({ error: "chats_failed" });
   }
 });
@@ -178,13 +338,14 @@ app.get("/replies", (_req, res) => {
   res.json({ replies: store.replies || [] });
 });
 
-app.get("/messages", async (req, res) => {
+app.get("/messages", authMiddleware, async (req, res) => {
   const { chatId } = req.query || {};
   if (!chatId) {
     res.status(400).json({ error: "missing_chatId" });
     return;
   }
   try {
+    if (!clientReady) return res.status(503).json({ error: "client_not_ready" });
     const chat = await client.getChatById(chatId);
     const messages = await chat.fetchMessages({ limit: 50 });
     const mapped = messages.map((m) => ({
@@ -196,6 +357,7 @@ app.get("/messages", async (req, res) => {
     }));
     res.json({ messages: mapped });
   } catch (e) {
+    console.error("Messages error:", e);
     res.status(500).json({ error: "messages_failed" });
   }
 });
@@ -208,6 +370,7 @@ app.post("/send", authMiddleware, validateStringFields(["message"]), async (req,
   }
 
   try {
+    if (!clientReady) return res.status(503).json({ error: "client_not_ready" });
     const target = chatId || `${number.replace(/\D/g, "")}@c.us`;
     const result = await client.sendMessage(target, message);
     const store = loadStore();
@@ -222,6 +385,7 @@ app.post("/send", authMiddleware, validateStringFields(["message"]), async (req,
     saveStore(store);
     res.json({ success: true, id: result.id?._serialized || null });
   } catch (e) {
+    console.error("Send error:", e);
     res.status(500).json({ error: "send_failed" });
   }
 });
@@ -234,6 +398,7 @@ app.post("/send-media", authMiddleware, validateStringFields(["mediaBase64", "mi
   }
 
   try {
+    if (!clientReady) return res.status(503).json({ error: "client_not_ready" });
     const target = chatId || `${number.replace(/\D/g, "")}@c.us`;
     const media = new MessageMedia(mimetype, mediaBase64, filename || "arquivo");
     const result = await client.sendMessage(target, media, { caption: message || "" });
@@ -249,6 +414,7 @@ app.post("/send-media", authMiddleware, validateStringFields(["mediaBase64", "mi
     saveStore(store);
     res.json({ success: true, id: result.id?._serialized || null });
   } catch (e) {
+    console.error("Send media error:", e);
     res.status(500).json({ error: "send_media_failed" });
   }
 });
@@ -259,7 +425,7 @@ app.get("/campaigns", (_req, res) => {
   res.json({ campaigns: store.campaigns || [] });
 });
 
-app.post("/campaigns", (req, res) => {
+app.post("/campaigns", authMiddleware, (req, res) => {
   const { name, message, numbers, tag } = req.body || {};
   if (!name) {
     res.status(400).json({ error: "missing_campaign_name" });
@@ -285,7 +451,7 @@ app.get("/tags", (_req, res) => {
   res.json({ tags: store.tags || [], contactTags: store.contactTags || {} });
 });
 
-app.post("/tags", (req, res) => {
+app.post("/tags", authMiddleware, (req, res) => {
   const { name } = req.body || {};
   if (!name) {
     res.status(400).json({ error: "missing_tag_name" });
@@ -297,7 +463,7 @@ app.post("/tags", (req, res) => {
   res.json({ success: true });
 });
 
-app.post("/tags/apply", (req, res) => {
+app.post("/tags/apply", authMiddleware, (req, res) => {
   const { numbers, tags } = req.body || {};
   if (!Array.isArray(numbers) || !Array.isArray(tags)) {
     res.status(400).json({ error: "missing_tags_data" });
@@ -319,7 +485,7 @@ app.get("/funnel", (_req, res) => {
   res.json({ funnel: store.funnel || {} });
 });
 
-app.post("/funnel/update", (req, res) => {
+app.post("/funnel/update", authMiddleware, (req, res) => {
   const { number, stage } = req.body || {};
   if (!number || !stage) {
     res.status(400).json({ error: "missing_funnel_data" });
@@ -333,7 +499,7 @@ app.post("/funnel/update", (req, res) => {
 });
 
 // Reports
-app.get("/reports", (_req, res) => {
+app.get("/reports", authMiddleware, (_req, res) => {
   const store = loadStore();
   const totalSent = store.sentLog.length;
   const totalReplies = store.replies.filter(r => !r.fromMe).length;
@@ -345,51 +511,56 @@ app.get("/reports", (_req, res) => {
   res.json({ totalSent, totalReplies, byCampaign });
 });
 
-app.post("/groups/create", async (req, res) => {
+app.post("/groups/create", authMiddleware, async (req, res) => {
   const { name, numbers } = req.body || {};
   if (!name || !Array.isArray(numbers) || numbers.length === 0) {
     res.status(400).json({ error: "missing_group_data" });
     return;
   }
   try {
+    if (!clientReady) return res.status(503).json({ error: "client_not_ready" });
     const participants = numbers.map((n) => `${String(n).replace(/\D/g, "")}@c.us`);
     const chat = await client.createGroup(name, participants);
     res.json({ id: chat?.id?._serialized || null });
   } catch (e) {
+    console.error("Create group error:", e);
     res.status(500).json({ error: "create_group_failed" });
   }
 });
 
-app.post("/groups/add", async (req, res) => {
+app.post("/groups/add", authMiddleware, async (req, res) => {
   const { chatId, numbers } = req.body || {};
   if (!chatId || !Array.isArray(numbers) || numbers.length === 0) {
     res.status(400).json({ error: "missing_group_data" });
     return;
   }
   try {
+    if (!clientReady) return res.status(503).json({ error: "client_not_ready" });
     const chat = await client.getChatById(chatId);
     await chat.addParticipants(numbers.map((n) => `${String(n).replace(/\D/g, "")}@c.us`));
     res.json({ success: true });
   } catch (e) {
+    console.error("Group add error:", e);
     res.status(500).json({ error: "add_participants_failed" });
   }
 });
 
-app.post("/groups/remove", async (req, res) => {
+app.post("/groups/remove", authMiddleware, async (req, res) => {
   const { chatId, numbers } = req.body || {};
   if (!chatId || !Array.isArray(numbers) || numbers.length === 0) {
     res.status(400).json({ error: "missing_group_data" });
     return;
   }
   try {
+    if (!clientReady) return res.status(503).json({ error: "client_not_ready" });
     const chat = await client.getChatById(chatId);
     await chat.removeParticipants(numbers.map((n) => `${String(n).replace(/\D/g, "")}@c.us`));
     res.json({ success: true });
   } catch (e) {
+    console.error("Group remove error:", e);
     res.status(500).json({ error: "remove_participants_failed" });
   }
 });
-
 
 // Função utilitária para jitter (delay aleatório)
 function randomDelay(min = 15000, max = 45000) {
@@ -399,6 +570,7 @@ function randomDelay(min = 15000, max = 45000) {
 // Função utilitária para spintax simples
 function spintax(msg, vars = {}) {
   // Exemplo: "{Olá|Oi|E aí} {nome}, seu pedido {saiu|tem novidades}!"
+  if (!msg) return "";
   let out = msg.replace(/\{([^}]+)\}/g, (_, opts) => {
     const arr = opts.split('|');
     return arr[Math.floor(Math.random() * arr.length)];
@@ -417,8 +589,8 @@ function horarioHumano() {
 }
 
 // Função para controle de ramp-up (limite diário por idade do número)
-function podeEnviarHoje(store, maxPorDia = 50) {
-  // Exemplo: limita a 50 envios/dia, pode customizar por idade do número
+function podeEnviarHoje(store, maxPorDia = 1000) {
+  // Ajustado para 1000 apenas como default, o ideal é ser configuravel
   const hoje = new Date().toISOString().slice(0, 10);
   const enviadosHoje = (store.sentLog || []).filter(s => {
     const data = new Date(s.timestamp).toISOString().slice(0, 10);
@@ -427,9 +599,7 @@ function podeEnviarHoje(store, maxPorDia = 50) {
   return enviadosHoje < maxPorDia;
 }
 
-// Scheduler is started inside startServer() to avoid running during tests
-
-// If not in test environment, start client and listen
+// Start Server se não for teste
 if (process.env.NODE_ENV !== 'test') {
   startServer().catch((e) => {
     console.error('Falha ao iniciar server:', e);
@@ -437,5 +607,4 @@ if (process.env.NODE_ENV !== 'test') {
   });
 }
 
-// ...existing code...
 export default app;
