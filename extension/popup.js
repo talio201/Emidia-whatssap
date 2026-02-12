@@ -1,5 +1,4 @@
-
-// Dashboard WhatsApp Web - Seleção múltipla, delays humanizados, integração backend
+// Dashboard WhatsApp Web - Integrado com chrome.storage e WebSocket
 const API_BASE = "http://localhost:3001";
 let contatosGlobal = [];
 let contatosSelecionados = new Set();
@@ -17,16 +16,23 @@ async function apiGet(path) {
 
 function renderContatos(contatos) {
   const lista = document.getElementById('contatos-lista');
+
+  if (!contatos || contatos.length === 0) {
+    lista.innerHTML = '<p style="text-align: center; color: #999; padding: 20px;">Nenhum contato encontrado.<br>Abra o WhatsApp Web em uma aba.</p>';
+    return;
+  }
+
   lista.innerHTML = '';
-  contatos.forEach(contato => {
+  contatos.forEach((contato, idx) => {
     const card = document.createElement('div');
-    card.className = 'contato-card' + (contatosSelecionados.has(contato.id) ? ' selecionado' : '');
-    card.innerHTML = `<strong>${contato.name || contato.number}</strong><br><span>${contato.number}</span>`;
+    const contatoId = contato.name || idx;
+    card.className = 'contato-card' + (contatosSelecionados.has(contatoId) ? ' selecionado' : '');
+    card.innerHTML = `<strong>${contato.name}</strong><br><span>${contato.timestamp ? new Date(contato.timestamp).toLocaleString() : ''}</span>`;
     card.onclick = () => {
-      if (contatosSelecionados.has(contato.id)) {
-        contatosSelecionados.delete(contato.id);
+      if (contatosSelecionados.has(contatoId)) {
+        contatosSelecionados.delete(contatoId);
       } else {
-        contatosSelecionados.add(contato.id);
+        contatosSelecionados.add(contatoId);
       }
       renderContatos(contatosGlobal);
     };
@@ -56,19 +62,51 @@ function setEnvioStatus(text) {
 async function carregarContatos() {
   setStatus('Carregando contatos...');
   try {
-    // Exemplo: buscar contatos do backend
-    const res = await apiGet('/contatos');
-    contatosGlobal = res.contatos || [];
-    renderContatos(contatosGlobal);
-    setStatus('Conectado');
+    // Load from chrome.storage (where background.js saves them)
+    const result = await chrome.storage.local.get(['contacts']);
+
+    if (result.contacts && result.contacts.length > 0) {
+      contatosGlobal = result.contacts;
+      renderContatos(contatosGlobal);
+      setStatus(`✅ ${contatosGlobal.length} contatos carregados`);
+    } else {
+      // Fallback: try loading from server
+      try {
+        const store = await apiGet('/status');
+        if (store.contacts && store.contacts.length > 0) {
+          contatosGlobal = store.contacts;
+          renderContatos(contatosGlobal);
+          setStatus(`✅ ${contatosGlobal.length} contatos (servidor)`);
+        } else {
+          contatosGlobal = [];
+          renderContatos([]);
+          setStatus('⚠️ Aguardando sincronização');
+        }
+      } catch (e) {
+        contatosGlobal = [];
+        renderContatos([]);
+        setStatus('⚠️ Aguardando sincronização');
+      }
+    }
   } catch (e) {
-    setStatus('Erro ao carregar contatos');
+    console.error('Erro ao carregar contatos:', e);
+    setStatus('❌ Erro ao carregar');
   }
 }
 
+// Listen for storage changes
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes.contacts) {
+    console.log('📊 Contatos atualizados!', changes.contacts.newValue?.length);
+    contatosGlobal = changes.contacts.newValue || [];
+    renderContatos(contatosGlobal);
+    setStatus(`✅ ${contatosGlobal.length} contatos`);
+  }
+});
+
 function filtrarContatos() {
   const filtro = document.getElementById('busca-contato').value.toLowerCase();
-  renderContatos(contatosGlobal.filter(c => (c.name || c.number || c.id).toLowerCase().includes(filtro)));
+  renderContatos(contatosGlobal.filter(c => (c.name || '').toLowerCase().includes(filtro)));
 }
 
 async function enviarMensagens() {
@@ -83,22 +121,24 @@ async function enviarMensagens() {
   }
   setEnvioStatus('Enviando mensagens...');
   let sucesso = 0, erro = 0;
+
   for (const contatoId of contatosSelecionados) {
-    const contato = contatosGlobal.find(c => c.id === contatoId);
-    const numero = contato ? contato.number : contatoId;
-    setEnvioStatus(`Enviando para ${numero}...`);
+    const contato = contatosGlobal.find(c => c.name === contatoId);
+    const nome = contato ? contato.name : contatoId;
+    setEnvioStatus(`Enviando para ${nome}...`);
+
     try {
       await delay(1000 + Math.random() * 2000);
-      await fetch(`${API_BASE}/send`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-token': 'changeme'
-        },
-        body: JSON.stringify({ number: numero, message: mensagem })
+
+      // Send via WebSocket through background script
+      chrome.runtime.sendMessage({
+        type: 'send_message_request',
+        to: nome,
+        message: mensagem
       });
+
       historico.unshift({
-        contato: numero,
+        contato: nome,
         mensagem: mensagem.substring(0, 100),
         status: 'enviado',
         data: new Date().toLocaleString('pt-BR')
@@ -106,7 +146,7 @@ async function enviarMensagens() {
       sucesso++;
     } catch {
       historico.unshift({
-        contato: numero,
+        contato: nome,
         mensagem: mensagem.substring(0, 100),
         status: 'erro',
         data: new Date().toLocaleString('pt-BR')
@@ -123,5 +163,7 @@ document.addEventListener('DOMContentLoaded', () => {
   renderHistorico();
   document.getElementById('busca-contato').oninput = filtrarContatos;
   document.getElementById('enviar-multiplos').onclick = enviarMensagens;
-});
 
+  // Auto-refresh every 5 seconds
+  setInterval(carregarContatos, 5000);
+});

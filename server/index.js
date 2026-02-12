@@ -2,10 +2,9 @@ import express from "express";
 import fs from "fs";
 import path from "path";
 import QRCode from "qrcode";
-import puppeteer from "puppeteer";
-import pkg from "whatsapp-web.js";
-const { Client, LocalAuth, MessageMedia } = pkg;
+import { WebSocketServer } from 'ws';
 import { fileURLToPath } from 'url';
+import { createServer } from 'http';
 
 // Configuração para __dirname em ES Modules
 const __filename = fileURLToPath(import.meta.url);
@@ -23,6 +22,42 @@ const uploadsDir = path.join(dataDir, "uploads");
 // Garante que diretórios existam
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+
+// --- FIX PARA CRASH RECOVERY (Evita popup "Restaurar páginas") ---
+const fixCrashPreferences = () => {
+  const sessionDir = path.join(dataDir, ".wwebjs_auth/session/Default");
+  const preferencesPath = path.join(sessionDir, "Preferences");
+
+  if (fs.existsSync(preferencesPath)) {
+    try {
+      const content = fs.readFileSync(preferencesPath, 'utf8');
+      const prefs = JSON.parse(content);
+
+      let modified = false;
+      if (prefs.profile) {
+        if (prefs.profile.exit_type !== 'Normal') {
+          prefs.profile.exit_type = 'Normal';
+          modified = true;
+        }
+        if (prefs.profile.exited_cleanly !== true) {
+          prefs.profile.exited_cleanly = true;
+          modified = true;
+        }
+      }
+
+      if (modified) {
+        fs.writeFileSync(preferencesPath, JSON.stringify(prefs));
+        console.log("⚠️ Preferências do Chrome corrigidas para evitar popup de restauração.");
+      }
+    } catch (e) {
+      console.error("Erro ao tentar corrigir preferências do Chrome:", e);
+    }
+  }
+};
+
+// Corrige antes de iniciar
+fixCrashPreferences();
+// ----------------------------------------------------------------
 
 // Funções utilitárias e variáveis globais
 const loadStore = () => {
@@ -43,6 +78,22 @@ let clientReady = false;
 let lastAuthError = null;
 let client = null;
 
+// Graceful Shutdown para evitar corromper sessão
+const shutdown = async () => {
+  console.log('\nEncerrando servidor...');
+  if (client) {
+    try {
+      await client.destroy();
+      console.log('Cliente WhatsApp encerrado corretamente.');
+    } catch (e) {
+      console.error('Erro ao encerrar cliente:', e);
+    }
+  }
+  process.exit(0);
+};
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
+
 // Middleware de autenticação simplificado (pass-through)
 const authMiddleware = (req, res, next) => {
   // Verifica token apenas se desejar strict mode, mas por padrão agora é aberto/local
@@ -62,74 +113,59 @@ const validateStringFields = (fields) => (req, res, next) => {
 };
 
 async function startServer() {
+  // Garante que o cliente anterior seja destruído antes de criar um novo
+  if (client) {
+    try { await client.destroy(); } catch (e) { }
+    client = null;
+  }
+
   console.log("Iniciando cliente WhatsApp...");
 
-  client = new Client({
-    authStrategy: new LocalAuth({ dataPath: path.join(dataDir, ".wwebjs_auth") }),
-    puppeteer: {
-      headless: false,
-      executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-infobars',
-        `--load-extension=${path.join(__dirname, '../extension')}`
-      ],
-      ignoreDefaultArgs: ['--enable-automation', '--disable-extensions']
+  // Usando WPPConnect ao invés de whatsapp-web.js
+  console.log('🔄 Criando cliente WPPConnect...');
+  client = await wppconnect.create({
+    session: 'emidia-session',
+    headless: false, // Mudado para abrir Chrome visível
+    executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    autoClose: 0,
+    catchQR: (base64Qr, asciiQR, attempts, urlCode) => {
+      console.log('\n✅ QR Code gerado com sucesso!');
+      console.log('📱 Abra seu navegador e acesse: http://localhost:' + PORT + '/qr');
+      console.log('   Escaneie o QR Code para conectar\n');
+      latestQr = base64Qr;
+    },
+    statusFind: (statusSession, session) => {
+      console.log(`🔄 Status: ${statusSession}`);
+      if (statusSession === 'isLogged') {
+        console.log('✅ Cliente WhatsApp conectado e pronto!');
+        clientReady = true;
+        latestQr = null;
+      } else if (statusSession === 'qrReadFail' || statusSession === 'qrReadError') {
+        console.log('❌ Falha ao ler QR Code');
+        lastAuthError = 'QR Code inválido ou expirado';
+        clientReady = false;
+      } else if (statusSession === 'notLogged') {
+        clientReady = false;
+      } else if (statusSession === 'browserClose' || statusSession === 'serverClose') {
+        console.log('Cliente desconectado:', statusSession);
+        clientReady = false;
+        // Attempt to restart or re-initialize if browser/server closes unexpectedly
+        console.log("♻️ Tentando reiniciar serviço após desconexão...");
+        startServer();
+      } else if (statusSession === 'autocloseCalled') {
+        console.log('Cliente desconectado por autoclose:', statusSession);
+        clientReady = false;
+      } else if (statusSession === 'desconnectedMobile') {
+        console.log('Cliente desconectado do celular:', statusSession);
+        clientReady = false;
+        // If mobile disconnects, session might be invalid, try to restart
+        console.log("♻️ Tentando reiniciar serviço após desconexão do celular...");
+        startServer();
+      }
     }
   });
 
-  client.on('qr', (qr) => {
-    console.log('QR Code recebido. Gere a imagem para escanear.');
-    QRCode.toDataURL(qr, (err, url) => {
-      if (!err) latestQr = url;
-    });
-  });
-
-  client.on('ready', () => {
-    console.log('Cliente WhatsApp conectado e pronto!');
-    clientReady = true;
-    latestQr = null;
-    lastAuthError = null;
-  });
-
-  client.on('authenticated', () => {
-    console.log('Cliente autenticado com sucesso.');
-    lastAuthError = null;
-  });
-
-  client.on('auth_failure', (msg) => {
-    console.error('Falha na autenticação:', msg);
-    lastAuthError = msg;
-    clientReady = false;
-  });
-
-  client.on('disconnected', (reason) => {
-    console.log('Cliente desconectado:', reason);
-    clientReady = false;
-    // Tenta reconectar ou reinicializar se necessário
-    client.initialize();
-  });
-
-  client.on('message', async (msg) => {
-    // Exemplo de log de mensagens recebidas
-    // Pode expandir para salvar no store.replies
-    if (!msg.fromMe) {
-      const store = loadStore();
-      store.replies.push({
-        id: msg.id._serialized,
-        from: msg.from,
-        body: msg.body,
-        timestamp: msg.timestamp,
-        hasMedia: msg.hasMedia,
-        fromMe: false
-      });
-      store.replies = store.replies.slice(-500); // Manter histórico limitado
-      saveStore(store);
-    }
-  });
-
-  await client.initialize();
+  console.log('✅ Cliente WPPConnect criado!');
 
   // Scheduler loop
   setInterval(async () => {
@@ -208,12 +244,6 @@ async function startServer() {
     }
     saveStore(store);
   }, 10000);
-
-  const BIND_ADDRESS = process.env.BIND_ADDRESS || '127.0.0.1';
-  app.listen(PORT, BIND_ADDRESS, () => {
-    console.log(`WhatsApp backend rodando na porta ${PORT} (bind ${BIND_ADDRESS})`);
-    console.log(`Visite http://${BIND_ADDRESS}:${PORT}/qr para ver o QR code se necessário.`);
-  });
 }
 
 // ... Routes (mantendo as existentes e garantindo que authMiddleware esteja disponível) ...
@@ -599,12 +629,85 @@ function podeEnviarHoje(store, maxPorDia = 1000) {
   return enviadosHoje < maxPorDia;
 }
 
-// Start Server se não for teste
-if (process.env.NODE_ENV !== 'test') {
-  startServer().catch((e) => {
-    console.error('Falha ao iniciar server:', e);
-    process.exit(1);
+// Create HTTP server for Express + WebSocket
+const httpServer = createServer(app);
+
+// Create WebSocket server
+const wss = new WebSocketServer({ server: httpServer });
+const connectedClients = new Set();
+
+wss.on('connection', (ws) => {
+  console.log('🔗 Nova conexão WebSocket estabelecida');
+  connectedClients.add(ws);
+
+  ws.on('message', (data) => {
+    try {
+      const message = JSON.parse(data.toString());
+      console.log('📨 Mensagem recebida:', message.type);
+
+      if (message.type === 'new_message') {
+        // Store message
+        const store = loadStore();
+        if (!store.replies) store.replies = [];
+        message.data.forEach(msg => {
+          store.replies.push({
+            ...msg,
+            id: Date.now().toString() + Math.random(),
+            timestamp: message.timestamp
+          });
+        });
+        store.replies = store.replies.slice(-500);
+        saveStore(store);
+
+        // Broadcast to all connected clients
+        broadcastToClients({ type: 'message_received', data: message.data });
+      }
+
+      if (message.type === 'sync_contacts') {
+        // Store contacts
+        const store = loadStore();
+        store.contacts = message.contacts;
+        saveStore(store);
+        console.log(`✅ ${message.contacts.length} contatos sincronizados`);
+      }
+
+      if (message.type === 'extension_connected') {
+        console.log('✅ Extensão Chrome conectada');
+        ws.send(JSON.stringify({ type: 'connection_ack', timestamp: Date.now() }));
+      }
+    } catch (e) {
+      console.error('Erro ao processar mensagem WebSocket:', e);
+    }
+  });
+
+  ws.on('close', () => {
+    console.log('❌ Conexão WebSocket fechada');
+    connectedClients.delete(ws);
+  });
+
+  ws.on('error', (error) => {
+    console.error('Erro WebSocket:', error);
+    connectedClients.delete(ws);
+  });
+});
+
+function broadcastToClients(message) {
+  connectedClients.forEach((client) => {
+    if (client.readyState === 1) { // OPEN
+      client.send(JSON.stringify(message));
+    }
   });
 }
+
+// Start HTTP + WebSocket server
+const BIND_ADDRESS = process.env.BIND_ADDRESS || '127.0.0.1';
+httpServer.listen(PORT, BIND_ADDRESS, () => {
+  console.log(`✅ Servidor HTTP rodando em http://${BIND_ADDRESS}:${PORT}`);
+  console.log(`✅ Servidor WebSocket disponível em ws://${BIND_ADDRESS}:${PORT}`);
+  console.log(`📱 Instale a extensão Chrome em: chrome://extensions\n`);
+});
+
+// WPPConnect desabilitado - extensão controla WhatsApp Web
+// A extensão gerencia autenticação e sincronização via WebSocket
 
 export default app;
